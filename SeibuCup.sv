@@ -181,42 +181,47 @@ wire [1:0] ar = status[127:126];
 // Volumi audio OSD (Q4.4: 16 = 100%, 32 = 200%, 0 = mute)
 wire [2:0] osd_fm_vol  = status[88:86];
 wire [2:0] osd_oki_vol = status[91:89];
-reg [5:0] fm_vol_q44, oki_vol_q44;
-always @(*) begin
-	case (osd_fm_vol)
-		3'd0: fm_vol_q44 = 6'd16;   // 100%
-		3'd1: fm_vol_q44 = 6'd2;    // 12%
-		3'd2: fm_vol_q44 = 6'd4;    // 25%
-		3'd3: fm_vol_q44 = 6'd8;    // 50%
-		3'd4: fm_vol_q44 = 6'd12;   // 75%
-		3'd5: fm_vol_q44 = 6'd24;   // 150%
-		3'd6: fm_vol_q44 = 6'd32;   // 200%
-		3'd7: fm_vol_q44 = 6'd0;    // mute
-	endcase
-	case (osd_oki_vol)
-		3'd0: oki_vol_q44 = 6'd16;
-		3'd1: oki_vol_q44 = 6'd2;
-		3'd2: oki_vol_q44 = 6'd4;
-		3'd3: oki_vol_q44 = 6'd8;
-		3'd4: oki_vol_q44 = 6'd12;
-		3'd5: oki_vol_q44 = 6'd24;
-		3'd6: oki_vol_q44 = 6'd32;
-		3'd7: oki_vol_q44 = 6'd0;
-	endcase
-end
+
+// Mixer per-canale (schema Raiden): 3 bit per selettore, 0=Default 1=Mute 2+=%.
+// Bit ricavati dai trim OSD per-layer rimossi: FM 34-60, OKI 61-72.
+wire [2:0] osd_fm_ch [0:8];
+assign osd_fm_ch[0] = status[36:34];
+assign osd_fm_ch[1] = status[39:37];
+assign osd_fm_ch[2] = status[42:40];
+assign osd_fm_ch[3] = status[45:43];
+assign osd_fm_ch[4] = status[48:46];
+assign osd_fm_ch[5] = status[51:49];
+assign osd_fm_ch[6] = status[54:52];
+assign osd_fm_ch[7] = status[57:55];
+assign osd_fm_ch[8] = status[60:58];
+
+wire [2:0] osd_oki_ch [0:3];
+assign osd_oki_ch[0] = status[63:61];
+assign osd_oki_ch[1] = status[66:64];
+assign osd_oki_ch[2] = status[69:67];
+assign osd_oki_ch[3] = status[72:70];   // batteria
+// I volumi globali vanno direttamente al modulo audio come selettori 3 bit:
+// la conversione la fa gain_resolve() partendo da DEF_GAIN_FM/DEF_GAIN_OKI
+// (guadagni tarati, non unita'), esattamente come Raiden.
 
 // Offset per-layer SeibuCup: SOLO trim OSD ±32 (base 0).
 // La finestra +16 della famiglia cupsoc (redraw $C7B0/$C840) e' applicata
 // allo SCROLL dei renderer (fetch, vedi bg/mg/fg_scroll_* e text sotto):
 // il fetch resta coerente su tutte le colonne — niente banda al bordo.
 // Qui restano solo i trim di rifinitura e la base famiglia sprite/text.
-wire signed [9:0] osd_bg_xoff  = {{4{status[39]}}, status[39:34]};
-wire signed [9:0] osd_bg_yoff  = {{4{status[45]}}, status[45:40]};
-wire signed [9:0] osd_mg_xoff  = {{4{status[51]}}, status[51:46]};
-wire signed [9:0] osd_mg_yoff  = {{4{status[57]}}, status[57:52]};
-wire signed [9:0] osd_fg_xoff  = {{4{status[63]}}, status[63:58]};
-wire signed [9:0] osd_fg_yoff  = {{4{status[69]}}, status[69:64]};
-wire signed [9:0] osd_spr_xoff = {{4{status[119]}}, status[119:114]} - 10'sd1;  // -1 = base famiglia (match MAME su HW)
+// I trim OSD per-layer sono stati RIMOSSI: i loro bit status[] servono ora al
+// mixer audio per-canale. TRIM0 = 0 e' esattamente il valore con cui il core
+// gira oggi (l'opzione OSD partiva da 0), quindi le posizioni sono INVARIATE.
+// Le basi -1/-8/-1 qui sotto restano dov'erano, con le loro motivazioni.
+localparam signed [9:0] TRIM0 = 10'sd0;
+
+wire signed [9:0] osd_bg_xoff  = TRIM0;
+wire signed [9:0] osd_bg_yoff  = TRIM0;
+wire signed [9:0] osd_mg_xoff  = TRIM0;
+wire signed [9:0] osd_mg_yoff  = TRIM0;
+wire signed [9:0] osd_fg_xoff  = TRIM0;
+wire signed [9:0] osd_fg_yoff  = TRIM0;
+wire signed [9:0] osd_spr_xoff = TRIM0 - 10'sd1;  // -1 = base famiglia (match MAME su HW)
 // -8 = base cupsoc. La finestra visibile e' set_visarea(0,319, 8,247): in MAME
 // lo sprite a Y=8 finisce sulla riga 8 della bitmap, che la visarea mostra IN
 // CIMA (m_xoffset/m_yoffset del SEI0211 sono 0, legionna.cpp non chiama
@@ -226,9 +231,9 @@ wire signed [9:0] osd_spr_xoff = {{4{status[119]}}, status[119:114]} - 10'sd1;  
 // gli sprite a essere sfasati rispetto a loro. Si vedeva sulla mini-mappa in
 // alto (alta pochi pixel: i puntini dei giocatori ne uscivano fuori), non sul
 // campo. Stesso ruolo del -1 su osd_spr_xoff.
-wire signed [9:0] osd_spr_yoff = {{4{status[28]}}, status[28:23]} - 10'sd8;
-wire signed [9:0] osd_txt_xoff = {{4{status[107]}}, status[107:102]} - 10'sd1;  // -1 pipeline
-wire signed [9:0] osd_txt_yoff = {{4{status[113]}}, status[113:108]};
+wire signed [9:0] osd_spr_yoff = TRIM0 - 10'sd8;
+wire signed [9:0] osd_txt_xoff = TRIM0 - 10'sd1;  // -1 pipeline
+wire signed [9:0] osd_txt_yoff = TRIM0;
 
 `include "build_id.v"
 // ─── MAPPA BIT OSD status[] — bit→significato (NO sovrapposizioni, verificato) ───
@@ -246,21 +251,23 @@ wire signed [9:0] osd_txt_yoff = {{4{status[113]}}, status[113:108]};
 //  [31]       MG layer enable          P4   On=0/Off=1                          ~status[31]
 //  [32]       FG layer enable          P4   On=0/Off=1                          ~status[32]
 //  [33]       Sprite layer enable      P4   On=0/Off=1                          ~status[33]
-//  [88:86]    FM (YM2151) volume       P3   100/12/25/50/75/150/200%/Mute       osd_fm_vol
-//  [91:89]    OKI ADPCM volume         P3   100/12/25/50/75/150/200%/Mute       osd_oki_vol
+//  [88:86]    FM (YM3812) volume       P3   0=Default(0.69x),1=Mute,2..7=%      osd_fm_vol
+//  [91:89]    OKI ADPCM volume         P3   0=Default(0.63x),1=Mute,2..7=%      osd_oki_vol
+//  [36:34]..[60:58]  FM Ch1..Ch9 vol   P3   0=Default,1=Mute,2..7=% (3 bit/ch)  osd_fm_ch[0..8]
+//  [63:61]..[72:70]  OKI Ch1..Ch4 vol  P3   idem; Ch4 = batteria                osd_oki_ch[0..3]
 //  [101]      CRT Adjust On/Off        P1   Off/On                              crt_on
 //  [100:96]   CRT H-Size               P1   0/+1..+15/-16..-1 (signed)          hsize_s
 //  [85:79]    CRT H-Position           P1   0/+1..+48/-48..-1                    hpos_off
 //  [78:74]    CRT V-Shift              P1   0/+1..+15/-16..-1 (signed)           vshift_off
 //  [127:126]  Aspect ratio             P1   Original/Full/[ARC1]/[ARC2]         ar
-//  NB: gli offset per-layer (ex P5) sono HARDCODATI (osd_*_xoff/yoff costanti,
-//      match pixel-perfect MAME). I loro vecchi bit sono ora LIBERI.
+//  NB: la pagina P5 "Layer Position" e' stata RIMOSSA. Gli offset sono ora
+//      costanti (TRIM0=0 + basi -1/-8/-1), identici ai valori con cui il core
+//      girava prima. I bit liberati sono andati al mixer audio per-canale.
 //  NB: status[17] = PAUSE (riga ~162). NON usarlo per opzioni salvabili: un cfg
 //      con bit17=1 mette il 68k in halt al boot -> il gioco non parte.
 //  [22:20]    Start Stage (diag)       P4   0=Normal,1..5=Stage N                osd_start_stage
-//  LIBERI: [4:1] [8:16] [23:28] [92:95] [102:119] — usabili per nuove opzioni.
-//  [38:34]..[73:69] = Layer Position P5 (BG/MG/FG/TXT X,Y — 5 bit t.c.);
 //  [74:78] [79:85] [96:100] [101] = CRT Adjust.
+//  LIBERI: [4:1] [8:16] [23:28] [73] [92:95] [102:125].
 localparam CONF_STR = {
 	"SeibuCup;;",
 	"-;",
@@ -273,12 +280,30 @@ localparam CONF_STR = {
 	"H1P1O[100:96],CRT H-Size,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"H1P1O[85:79],CRT H-Position,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,+32,+33,+34,+35,+36,+37,+38,+39,+40,+41,+42,+43,+44,+45,+46,+47,+48,-48,-47,-46,-45,-44,-43,-42,-41,-40,-39,-38,-37,-36,-35,-34,-33,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"H1P1O[78:74],CRT V-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"H1P1O[107:104],CRT V-Size,0,+1,+2,+3,+4,+5,+6,+7,-7,-6,-5,-4,-3,-2,-1;",
+	"H1P1O[108],CRT V-Size Mode,PVM,Cabinet;",
 	"-;",
 	"DIP;",
 	"-;",
 	"P3,Audio;",
-	"P3O[88:86],FM (YM2151) volume,100%,12%,25%,50%,75%,150%,200%,Mute;",
-	"P3O[91:89],OKI ADPCM volume,100%,12%,25%,50%,75%,150%,200%,Mute;",
+	"P3O[88:86],FM (YM3812) volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[91:89],OKI ADPCM volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"-;",
+	"P3O[36:34],FM Ch1 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[39:37],FM Ch2 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[42:40],FM Ch3 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[45:43],FM Ch4 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[48:46],FM Ch5 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[51:49],FM Ch6 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[54:52],FM Ch7 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[57:55],FM Ch8 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[60:58],FM Ch9 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"-;",
+	"P3O[63:61],OKI Ch1 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[66:64],OKI Ch2 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[69:67],OKI Ch3 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"P3O[72:70],OKI Ch4 Volume (batteria),Default,Mute,25%,50%,75%,100%,150%,200%;",
+	"-;",
 	"-;",
 	"P4,Debug;",
 	"P4O[30],BG layer,On,Off;",
@@ -288,17 +313,6 @@ localparam CONF_STR = {
 	"P4O[29],Text layer,On,Off;",
 	"P4O[22:20],Start Stage,Normal,Phase 1,Phase 2,Stage 4,Stage 5,Stage 6,Ending;",
 	"P4-;",
-	"P5,Layer Position;",
-	"P5O[39:34],BG X,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[45:40],BG Y,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[51:46],MG X,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[57:52],MG Y,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[63:58],FG X,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[69:64],FG Y,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[107:102],Text X,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[113:108],Text Y,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[119:114],Sprite X,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"P5O[28:23],Sprite Y,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"-;",
 	"T[0],Reset;",
 	"R[0],Reset and close OSD;",
@@ -314,7 +328,7 @@ wire forced_scandoubler;
 wire  [1:0] buttons;
 wire [127:0] status;
 wire [10:0] ps2_key;
-wire [15:0] joy0, joy1;
+wire [15:0] joy0, joy1, joy2, joy3;
 wire        ioctl_download;
 wire [15:0] ioctl_index;
 wire        ioctl_wr;
@@ -335,6 +349,8 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 	.ps2_key(ps2_key),
 	.joystick_0(joy0),
 	.joystick_1(joy1),
+	.joystick_2(joy2),
+	.joystick_3(joy3),
 	.ioctl_download(ioctl_download),
 	.ioctl_index(ioctl_index),
 	.ioctl_wr(ioctl_wr),
@@ -356,6 +372,16 @@ wire [7:0] p1_input = {1'b1, ~joy0[6], ~joy0[5], ~joy0[4], ~joy0[0], ~joy0[1], ~
 wire [7:0] p2_input = {1'b1, ~joy1[6], ~joy1[5], ~joy1[4], ~joy1[0], ~joy1[1], ~joy1[2], ~joy1[3]};
 wire [15:0] p1_p2_input = {p2_input, p1_input};
 
+// PLAYERS34 ($100748), mappa del driver CUPSOC (non di heatbrl, che mette i
+// gettoni in un'altra porta): INPUT_PORTS_START(cupsoc), porta "PLAYERS34"
+//   bit0-3 U/D/L/R   bit4 Shoot   bit5 Pass   bit6 Debug   bit7 COIN3
+//   bit8-11 idem P4  bit12        bit13       bit14        bit15 COIN4
+// Tutti active low. Direzioni nell'ordine di p1_input/p2_input qui sopra
+// (game bit0=UP=joy[3] ... bit3=RIGHT=joy[0]). Il bit Debug resta a 1.
+wire [7:0] p3_input = {~joy2[11], 1'b1, ~joy2[5], ~joy2[4], ~joy2[0], ~joy2[1], ~joy2[2], ~joy2[3]};
+wire [7:0] p4_input = {~joy3[11], 1'b1, ~joy3[5], ~joy3[4], ~joy3[0], ~joy3[1], ~joy3[2], ~joy3[3]};
+wire [15:0] p3_p4_input = {p4_input, p3_input};
+
 // SeibuCup SYSTEM port ($10074C) — MAME legionna.cpp:427-436
 //   bit0 = START1 (active LOW)
 //   bit1 = START2 (active LOW)
@@ -363,7 +389,8 @@ wire [15:0] p1_p2_input = {p2_input, p1_input};
 //   bit8..15 = UNKNOWN → tied 1
 // Coin inputs NON sono qui: vanno via SEIBU_COIN_INPUTS → Z80 → soundlatch.
 // Nessun service switch in SeibuCup SYSTEM port (era ipotesi residua SD Gundam).
-wire [15:0] system_input16 = {8'hFF,                          // [15:8] tutti 1
+// bit8 = START3, bit9 = START4 (MAME porta "SYSTEM" di cupsoc).
+wire [15:0] system_input16 = {6'h3F, ~joy3[10], ~joy2[10],    // bit9=START4 bit8=START3
                               6'h3F, ~joy1[10], ~joy0[10]};   // bit1=START2 bit0=START1
 
 // Seibu coin input (ACTIVE_HIGH per SEIBU_COIN_INPUTS macro): bit0=COIN1, bit1=COIN2.
@@ -608,6 +635,7 @@ darius_dual68k_top game
 	.z80_clk_sel(2'd0),          // Sound CPU default (3.58 MHz)
 	.p1_input(p1_input),
 	.p2_input(p2_input),
+	.pin34_input(p3_p4_input),
 	.system_input(system_input16),
 	.dsw_input(dip_sw),
 	.dsw2_input(dip_sw2),
@@ -685,8 +713,13 @@ darius_dual68k_top game
 	.oki_rom_data(oki_rom_data),
 	.oki_rom_ok(oki_rom_ok),
 	// Volumi OSD
-	.fm_vol_q44(fm_vol_q44),
-	.oki_vol_q44(oki_vol_q44),
+	.fm_vol_sel(osd_fm_vol),
+	.oki_vol_sel(osd_oki_vol),
+	.fm_ch_vol_sel0(osd_fm_ch[0]), .fm_ch_vol_sel1(osd_fm_ch[1]), .fm_ch_vol_sel2(osd_fm_ch[2]),
+	.fm_ch_vol_sel3(osd_fm_ch[3]), .fm_ch_vol_sel4(osd_fm_ch[4]), .fm_ch_vol_sel5(osd_fm_ch[5]),
+	.fm_ch_vol_sel6(osd_fm_ch[6]), .fm_ch_vol_sel7(osd_fm_ch[7]), .fm_ch_vol_sel8(osd_fm_ch[8]),
+	.oki_ch_vol_sel0(osd_oki_ch[0]), .oki_ch_vol_sel1(osd_oki_ch[1]),
+	.oki_ch_vol_sel2(osd_oki_ch[2]), .oki_ch_vol_sel3(osd_oki_ch[3]),
 	// Audio
 	.audio_l(game_audio_l),
 	.audio_r(game_audio_r)
@@ -1158,10 +1191,42 @@ wire signed [8:0] hpos_off = (hpos_d <= 7'd48)
 reg signed [5:0] vshift_off;
 always @(posedge clk_sys) if (ce_pix) vshift_off <= $signed(status[78:74]);
 
+// ── CRT V-Size: stadio a monte di crt_adjust ────────────────────────────────
+// Ritempora il numero di righe per frame (il frame rate NON cambia): meno
+// righe = riga piu' lunga = immagine PIU' ALTA. Nessuna riga duplicata o
+// scartata. Il costo e' che l'HSync si sposta: un PVM segue, un chassis da
+// cabinato con AFC stretta regge uno o due passi.
+// Convenzione del modulo: vsize +N = immagine piu' BASSA. La negazione qui
+// sotto fa si' che "+" nell'OSD significhi piu' ALTA, come per l'H-Size.
+reg signed [5:0] crt_vsz;
+reg              crt_vsmode;
+wire signed [5:0] crt_vsz_step = $signed(status[107:104]);
+wire signed [7:0] vsz_raw = -($signed({{2{crt_vsz_step[5]}}, crt_vsz_step})
+                            + ($signed({{2{crt_vsz_step[5]}}, crt_vsz_step}) <<< 1));
+
+// ⛔ TETTO DELL'ENLARGE = front porch verticale di QUESTO gioco (V_FP = 9).
+// Allargando, il modulo emette meno righe e il contenuto scende: oltre le
+// righe di front porch le ultime dell'immagine non vengono piu' emesse.
+// SeibuCup ha 240 righe attive dentro 262 totali, cioe' 22 di blanking:
+// molto meno di quanto l'OSD offra (passi da 3 fino a 21).
+localparam signed [7:0] ENL_MAX = 8'sd9;   // = V_FP del video_timing
+
+// Tetti dello SHRINK: li impone la profondita' del ring, e sono diversi nei due
+// modi (docs: PVM |vsize| <= RING/2 - 2, Cabinet <= RING - 4). Con RING_LINES 32
+// valgono 14 e 28. Non e' una perdita: l'enlarge e' gia' fermo a 9 per il front
+// porch, e oltre quei valori il ring non avrebbe le righe per lavorare.
+wire signed [7:0] vsz_cab = (vsz_raw >  8'sd28)  ?  8'sd28
+                          : (vsz_raw < -ENL_MAX) ? -ENL_MAX : vsz_raw;
+wire signed [7:0] vsz_pvm = (vsz_raw >  8'sd14)  ?  8'sd14
+                          : (vsz_raw < -ENL_MAX) ? -ENL_MAX : vsz_raw;
+always @(posedge clk_sys) if (ce_pix) begin
+	crt_vsz    <= status[108] ? vsz_cab[5:0] : vsz_pvm[5:0];
+	crt_vsmode <= status[108];
+end
+
 // Read rate a QUARTI di ciclo. SeibuCup pixel = 96/14 = 14 clk = 56 quarti
 // (NON 64 come Legionnaire/Gundam a 96/16): base = clk_video/pixel * 4 = 56.
 // Periodo = (56 + hsize) quarti; l'accumulatore fa +4 per clk.
-wire line_tick = ce_pix && (timing_hpos == 10'(H_TOTAL_BB - 1));
 wire hs_ref;                      // dal modulo (registrato) -> no loop combinatorio
 reg  hs_ref_d;
 always @(posedge clk_sys) hs_ref_d <= hs_ref;
@@ -1176,6 +1241,59 @@ always @(posedge clk_sys) begin
 end
 wire rd_ce = crt_on ? rd_tick : ce_pix;
 
+// ── Stadio di riallineamento, copiato da sys/scanlines.v ────────────────────
+// Sys-side il flusso passa da `scanlines`, che ritarda di TRE clock dato,
+// sync, DE e ANCHE il clock-enable, tutti insieme: quando pxl_cen pulsa, il
+// dato che il modulo campiona e' esattamente il pixel di quel CE.
+// Core-side quella garanzia non c'e': ce_pix esce dai contatori del timing
+// mentre l'RGB arriva dalla palette in BRAM. Qui si replica lo stesso stadio,
+// stessa profondita' e stessi segnali, cosi' il ring campiona l'istante giusto.
+reg [7:0] sl_r, sl_g, sl_b;
+reg       sl_hs, sl_vs, sl_de, sl_vb, sl_ce;
+always @(posedge clk_sys) begin
+	reg [7:0] r1, r2, g1, g2, b1, b2;
+	reg       hs1, hs2, vs1, vs2, de1, de2, vb1, vb2, ce1, ce2;
+	sl_r  <= r2;  r2  <= r1;  r1  <= av_r;
+	sl_g  <= g2;  g2  <= g1;  g1  <= av_g;
+	sl_b  <= b2;  b2  <= b1;  b1  <= av_b;
+	sl_hs <= hs2; hs2 <= hs1; hs1 <= HSync;
+	sl_vs <= vs2; vs2 <= vs1; vs1 <= VSync;
+	sl_de <= de2; de2 <= de1; de1 <= video_de_r;
+	sl_vb <= vb2; vb2 <= vb1; vb1 <= VBlank;
+	sl_ce <= ce2; ce2 <= ce1; ce1 <= ce_pix;
+end
+
+wire [7:0] vz_r, vz_g, vz_b;
+wire       vz_hs, vz_vs, vz_de, vz_vb, vz_ce;
+crt_vsize #(
+	// Vincoli del ring (docs): PVM |vsize| <= RING/2 - 2, Cabinet <= RING - 4.
+	// LINE_PX 320 = larghezza attiva VERA di questo gioco (Rainbow usa 384 che
+	// e' il valore ereditato dal riferimento NeoGeo): ogni pixel in piu' per
+	// riga costa blocchi M10K, e qui il budget e' stretto.
+	// RING_LINES 32 invece di 46: 46 servono per +/-21 righe, ma qui l'enlarge
+	// e' gia' limitato a 9 dal front porch verticale. Le 14 righe di ring in
+	// meno valgono ~14 blocchi M10K, che a 553/553 sono tutto lo spazio che c'e'.
+	.RING_LINES(32),
+	.LINE_PX   (320)
+) u_crt_vsize (
+	.clk       (clk_sys),
+	.pxl_cen   (sl_ce),
+	.active    (crt_on),
+	.tube_mode (crt_vsmode),
+	.vsize     (crt_vsz),
+	.r_in      (sl_r), .g_in (sl_g), .b_in (sl_b),
+	.hs_in     (sl_hs),
+	.vs_in     (sl_vs),
+	.de_in     (sl_de),            // DE del DATO (video_de_r), non dei contatori
+	.vb_in     (sl_vb),            // vblank VERO, non il blank combinato
+	.r_out     (vz_r), .g_out (vz_g), .b_out (vz_b),
+	.hs_out    (vz_hs),
+	.vs_out    (vz_vs),
+	.de_out    (vz_de),
+	.vb_out    (vz_vb),
+	.ce_out    (vz_ce)
+);
+
 wire [7:0] str_r, str_g, str_b;
 wire       str_hs, str_vs, str_hb, str_vb;
 crt_adjust #(
@@ -1184,40 +1302,32 @@ crt_adjust #(
 	.HPOS_MODE(0)          // 0 = HPOS_SYNCSHIFT (geometria ancorata come Legionnaire)
 ) u_crt_adjust (
 	.clk      (clk_sys),
-	.pxl_cen  (ce_pix),
+	.pxl_cen  (vz_ce),            // CE ritemporizzato da crt_vsize, non ce_pix
 	.pxl2_cen (rd_ce),
 	.active   (crt_on),
 	.hsize    (hsize_s),
 	.hoffset  (hpos_off),
 	.voffset  (vshift_off),
-	.r_in     (av_r), .g_in (av_g), .b_in (av_b),
-	.hs_in    (HSync),
-	.vs_in    (VSync),
-	.hb_in    (HBlank | VBlank),
-	.vb_in    (VBlank),
+	.r_in     (vz_r), .g_in (vz_g), .b_in (vz_b),
+	.hs_in    (vz_hs),
+	.vs_in    (vz_vs),
+	.hb_in    (~vz_de),
+	.vb_in    (vz_vb),            // vblank RIGENERATO: col nativo le righe
+	                              // aggiunte verrebbero annerite qui
 	.r_out    (str_r), .g_out (str_g), .b_out (str_b),
 	.hs_out   (str_hs), .vs_out (str_vs),
 	.hb_out   (str_hb), .vb_out (str_vb),
 	.hs_ref_out (hs_ref)
 );
 
-// Finestra DE per l'OSD: apre all'attivo nativo (ritardato 1 riga), chiude a
-// larghezza stretchata piena (pattern Blood Bros).
-reg vblank_1l;
-always @(posedge clk_sys) if (line_tick) vblank_1l <= VBlank;
-wire native_active = ~(HBlank | vblank_1l);
-reg  native_active_d;
-always @(posedge clk_sys) if (ce_pix) native_active_d <= native_active;
-wire native_rise = native_active & ~native_active_d;
-wire str_active = ~str_hb;
-reg  str_active_d;
-always @(posedge clk_sys) if (rd_ce) str_active_d <= str_active;
-wire str_fall = str_active_d & ~str_active;
-reg de_osd;
-always @(posedge clk_sys) begin
-	if      (native_rise) de_osd <= 1'b1;
-	else if (str_fall)    de_osd <= 1'b0;
-end
+// Finestra DE a valle: interamente dalle uscite di crt_adjust, come da
+// docs/vsize-integration.md ("feed everything downstream from the _vz
+// signals") e come fa il NeoGeo Streamer con
+//     assign vga_de_hs = ~vga_hb_hs & ~vga_vb_hs;
+// La vecchia finestra si apriva sul VBlank NATIVO (pattern Blood Bros): con il
+// V-Size attivo le righe aggiunte cadrebbero fuori da quella finestra e
+// resterebbero nere.
+wire de_osd = ~str_hb & ~str_vb;
 
 // Output: ON -> dal modulo; OFF -> nativo.
 assign VGA_R  = crt_on ? str_r  : av_r;

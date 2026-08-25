@@ -29,6 +29,8 @@ module jt6295(
     output        [17:0]   rom_addr,
     input         [ 7:0]   rom_data,
     input                  rom_ok,
+    // Per-channel volume (Q4.4, 0x10=1.0x = default unita')
+    input         [ 7:0]   chvol0, chvol1, chvol2, chvol3,
     // Sound output
     output signed [13:0]   sound,
     output                 sample   // 48 kHz for a 1.000 MHz cen
@@ -161,6 +163,10 @@ jt6295_acc #(.INTERPOL(INTERPOL)) u_acc(
     .cen4       ( cen_sr4       ),
     // serialized data
     .sound_in   ( pipe_snd      ),
+    .chvol0     ( chvol0        ),
+    .chvol1     ( chvol1        ),
+    .chvol2     ( chvol2        ),
+    .chvol3     ( chvol3        ),
     .sound_out  ( sound         ),
     .sample     ( cen_eff       )
 );

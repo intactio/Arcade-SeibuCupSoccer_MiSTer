@@ -29,7 +29,8 @@ was also released as *Olympic Soccer '92* and in a *Selection* revision.
 
 ## Status
 
-**Current version: 0.8 beta** — playable, in preview.
+**Current version: 0.9 beta** — playable, in preview. **Public release coming
+shortly.**
 
 The core reimplements the Seibu `legionna` hardware and runs the game on real
 MiSTer hardware. Verification is still ongoing.
@@ -42,11 +43,32 @@ MiSTer hardware. Verification is still ongoing.
 - Seibu **COP3** coprocessor: register file, movement and collision macros,
   DMA copy modes (fill / fade / generic copy) into the real VRAM / sprite
   RAM, and the depth sorting of the players
-- Analog video output with CRT adjust (H-sync shift)
+- Analog video output with **CRT Adjust** (H-Size, H-Position, V-Shift) and
+  **CRT V-Size** (PVM line retimer / Cabinet photometric scaling)
 - VBlank-synchronized pause, MiSTer OSD with video/DIP options
 - Pause overlay with logo + supporters scroll
+- Four-player support, including the per-cabinet match time DIP
 
-**Final polishing:**
+**New in 0.9:**
+- **CRT V-Size**, the vertical companion to CRT Adjust: PVM mode retimes the
+  line count without ever duplicating, dropping or blending a line; Cabinet
+  mode keeps the sync native. Ring sized to this game (32 lines): shrink up to
+  14 lines in PVM and 28 in Cabinet. Enlarge is capped at 9 lines, which is the
+  vertical front porch this game actually has — beyond it the bottom of the
+  picture would stop being emitted.
+- **The core now meets timing.** The chronic critical path (COP CORDIC, sort,
+  DMA dispatcher, fade, sprite emit) was re-pipelined step by step — arithmetic
+  unchanged, work simply moved off the cycle where it did not fit. Every step
+  was proven equivalent before compiling, with two new equivalence testbenches
+  that compare the current logic against a frozen copy of itself.
+- Audio chain aligned to the Raiden core: five upstream rhythm fixes in the
+  OPL2, 4x FIR upsampler on the OKI, soft-clip mixer and per-channel volume in
+  the OSD.
+- Pause overlay recentred on the real 320x240 active area, and the supporters
+  list no longer truncated (the scroll buffer was shorter than the file).
+
+**Still open:**
+- Player facing directions are not always right in some situations
 - Accuracy pass, extended play testing, edge-case cleanup
 
 ## Hardware emulated

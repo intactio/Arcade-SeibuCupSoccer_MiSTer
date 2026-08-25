@@ -71,6 +71,7 @@ module darius_dual68k_top
 	input  wire  [1:0] z80_clk_sel,
 	input  wire  [7:0] p1_input,
 	input  wire  [7:0] p2_input,
+	input  wire [15:0] pin34_input,   // PLAYERS34: P3+P4 (+COIN3/COIN4)
 	input  wire [15:0] system_input,
 	input  wire [15:0] dsw_input,
 	input  wire [15:0] dsw2_input,
@@ -127,8 +128,21 @@ module darius_dual68k_top
 	output wire [18:0] oki_rom_addr,   // bit18 = bank OKI godzilla (512KB)
 	input  wire  [7:0] oki_rom_data,
 	input  wire        oki_rom_ok,
-	input  wire  [5:0] fm_vol_q44,
-	input  wire  [5:0] oki_vol_q44,
+	input  wire  [2:0] fm_vol_sel,
+	input  wire  [2:0] oki_vol_sel,
+	input  wire  [2:0] fm_ch_vol_sel0,
+	input  wire  [2:0] fm_ch_vol_sel1,
+	input  wire  [2:0] fm_ch_vol_sel2,
+	input  wire  [2:0] fm_ch_vol_sel3,
+	input  wire  [2:0] fm_ch_vol_sel4,
+	input  wire  [2:0] fm_ch_vol_sel5,
+	input  wire  [2:0] fm_ch_vol_sel6,
+	input  wire  [2:0] fm_ch_vol_sel7,
+	input  wire  [2:0] fm_ch_vol_sel8,
+	input  wire  [2:0] oki_ch_vol_sel0,
+	input  wire  [2:0] oki_ch_vol_sel1,
+	input  wire  [2:0] oki_ch_vol_sel2,
+	input  wire  [2:0] oki_ch_vol_sel3,
 	output wire signed [15:0] audio_l,
 	output wire signed [15:0] audio_r
 );
@@ -193,8 +207,13 @@ SeibuCup_audio_z80 u_audio (
 	.oki_rom_addr(oki_rom_addr),
 	.oki_rom_data(oki_rom_data),
 	.oki_rom_ok(oki_rom_ok),
-	.fm_vol_q44(fm_vol_q44),
-	.oki_vol_q44(oki_vol_q44),
+	.fm_vol_sel(fm_vol_sel),
+	.oki_vol_sel(oki_vol_sel),
+	.fm_ch_vol_sel0(fm_ch_vol_sel0), .fm_ch_vol_sel1(fm_ch_vol_sel1), .fm_ch_vol_sel2(fm_ch_vol_sel2),
+	.fm_ch_vol_sel3(fm_ch_vol_sel3), .fm_ch_vol_sel4(fm_ch_vol_sel4), .fm_ch_vol_sel5(fm_ch_vol_sel5),
+	.fm_ch_vol_sel6(fm_ch_vol_sel6), .fm_ch_vol_sel7(fm_ch_vol_sel7), .fm_ch_vol_sel8(fm_ch_vol_sel8),
+	.oki_ch_vol_sel0(oki_ch_vol_sel0), .oki_ch_vol_sel1(oki_ch_vol_sel1),
+	.oki_ch_vol_sel2(oki_ch_vol_sel2), .oki_ch_vol_sel3(oki_ch_vol_sel3),
 	.audio_l(audio_l), .audio_r(audio_r)
 );
 
@@ -333,6 +352,7 @@ SeibuCup_maincpu_map u_map (
 	.bus_busy       (map_busy),
 	.p1_input       (p1_input),
 	.p2_input       (p2_input),
+	.pin34_input    (pin34_input),
 	.system_input   (system_input),
 	.dsw_input      (dsw_input),
 	.dsw2_input     (dsw2_input),

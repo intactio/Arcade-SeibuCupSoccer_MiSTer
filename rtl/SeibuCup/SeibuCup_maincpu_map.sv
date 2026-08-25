@@ -58,6 +58,7 @@ module SeibuCup_maincpu_map (
 	// Inputs
 	input  wire  [7:0] p1_input,
 	input  wire  [7:0] p2_input,
+	input  wire [15:0] pin34_input,   // PLAYERS34: P3+P4, con COIN3/COIN4
 	input  wire [15:0] system_input,
 	input  wire [15:0] dsw_input,
 	input  wire [15:0] dsw2_input,
@@ -328,7 +329,7 @@ module SeibuCup_maincpu_map (
 			bus_cs    = 1'b1;
 		end
 		else if (is_pin34) begin
-			bus_rdata = 16'hFFFF;
+			bus_rdata = pin34_input;
 			bus_cs    = 1'b1;
 		end
 		else if (is_sin) begin

@@ -118,6 +118,12 @@ module SeibuCup_cop3 (
 
 	// Misc registers
 	reg [8:0]  cop_dma_mode;        // selects bank for src/size/dst
+	// Voci selezionate dal mode, REGISTRATE: indicizzare array da 256
+	// dentro il ciclo del trigger significa mettere tre mux 256:1 in serie
+	// col decode del dispatcher, ed era il percorso critico del core.
+	// Il mode e le voci arrivano da scritture CPU, distanti molti cicli
+	// dal trigger: quando serve, il valore registrato e' gia' quello giusto.
+	reg [15:0] dma_src_sel, dma_size_sel, dma_dst_sel;
 	reg [15:0] cop_dma_adr_rel;
 	reg [15:0] cop_dma_v1;
 	reg [15:0] cop_dma_v2;
@@ -709,6 +715,11 @@ module SeibuCup_cop3 (
 		M_SORT_LD_D     = 7'd110,
 		M_SORT_LD_E     = 7'd111,
 		M_SORT_CMP      = 7'd112,
+		M_138E_CORDIC_B = 7'd122,   // atan: seconda meta' dell'iterazione CORDIC
+		M_0905_WR_HI_B  = 7'd123,   // 0905: seconda meta' (somma alta col carry)
+		M_138E_CALC_B   = 7'd124,   // atan: valori assoluti e carico del CORDIC
+		M_SORT_SWAP     = 7'd125,   // sort: confronto e scambio su valori registrati
+		D_FADE_TAB      = 7'd126,   // fade: tabella (moltiplicatore) su dati registrati
 		M_SORT_ST       = 7'd113;
 
 	reg [6:0]  fsm /*verilator public_flat_rd*/;
@@ -725,6 +736,9 @@ module SeibuCup_cop3 (
 	// ordinerebbe solo i primi 24 slot su 60 e la profondita' resterebbe
 	// sbagliata per meta' dei giocatori.
 	reg [15:0]        sort_val [0:59];
+	// Coppia letta dall'array, registrata: separa il mux 60:1 dal confronto.
+	reg signed [15:0] sort_ka, sort_kb;
+	reg        [15:0] sort_va, sort_vb;
 	reg signed [15:0] sort_key [0:59];
 	reg [5:0]  sort_i, sort_j, sort_pass;
 	reg        sort_swapped;
@@ -815,6 +829,12 @@ module SeibuCup_cop3 (
 	// (Il vecchio dma80_to_spr era INVERTITO: il blit pietre e' src=$105800
 	// dst=$104000, non il contrario — MAME map: $100478=SRC, $10047C=DST.)
 	reg [15:0] fade_out_val;        // pal_val calcolato, scritto in D_FADE_COMMIT
+	// Termini precalcolati per togliere aritmetica dal ciclo che consuma il dato
+	// letto dalla BRAM: dopo la M10K deve restarci UNA somma sola, non due.
+	reg [15:0] scrn_delta;          // (tmp32_a[31:16] - tmp_hi) del 0205
+	reg signed [31:0] calc_dx, calc_dy;  // differenze del 138e, registrate
+	reg [15:0] p905_low;            // somma/differenza bassa del 0905
+	reg        p905_cb;             // carry (o borrow) uscente da quella somma
 	// LEGACY sprite-DMA state (MAME m_sprite_dma_rel_x/y, m_sprite_dma_x_clip)
 	reg        spr_src_is_rom;      // src template in ROM 68k (< $100000): porta cop_rom
 	reg [15:0] spr_rom_lat;         // word letta dalla ROM (info c480)
@@ -850,14 +870,30 @@ module SeibuCup_cop3 (
 	wire abs_wr_state = (fsm == D_FADE_COMMIT) || (fsm == M_C4_WRI)
 	                 || (fsm == M_C4_WRX)      || (fsm == M_C4_WRY)
 	                 || (fsm == M_C4_WRP);
-	assign dma_fill_we    = ((fsm == D_FILL_W) && fill_is_vram)
+	wire        fill_we_c    = ((fsm == D_FILL_W) && fill_is_vram)
 	                        || ((fsm == D_WRITE) && (dma_copy80 || dma_copy_gen))
 	                        || (abs_wr_state && dst_abs_is_vram);
-	assign dma_fill_addr  = (dma_copy80 || dma_copy_gen || abs_wr_state)
+	wire [22:0] fill_addr_c  = (dma_copy80 || dma_copy_gen || abs_wr_state)
 	                        ? dma_dst_abs[23:1] : dma_src[23:1];
-	assign dma_fill_wdata = abs_wr_state ? fade_out_val
+	wire [15:0] fill_wdata_c = abs_wr_state ? fade_out_val
 	                      : (dma_copy80 || dma_copy_gen) ? dma_src_rdata
 	                                   : (dma_src[1] ? cop_dma_v1 : cop_dma_v2);
+
+	// STADIO DI USCITA REGISTRATO. Il dato nasceva da un mux combinatorio
+	// sull'uscita della M10K e attraversava mezzo chip fino alla RAM sprite:
+	// era il percorso critico. I tre segnali sono registrati INSIEME, quindi la
+	// scrittura e' identica, solo un ciclo dopo — nessun cambio di contenuto.
+	reg        fill_we_r;
+	reg [22:0] fill_addr_r;
+	reg [15:0] fill_wdata_r;
+	always @(posedge clk) begin
+		fill_we_r    <= fill_we_c;
+		fill_addr_r  <= fill_addr_c;
+		fill_wdata_r <= fill_wdata_c;
+	end
+	assign dma_fill_we    = fill_we_r;
+	assign dma_fill_addr  = fill_addr_r;
+	assign dma_fill_wdata = fill_wdata_r;
 
 	always @(posedge clk) begin : trig_blk
 		if (reset) begin
@@ -1052,6 +1088,13 @@ module SeibuCup_cop3 (
 	reg signed [31:0] cordic_x, cordic_y;     // CORDIC vectoring accumulators
 	reg signed [23:0] cordic_z;               // angolo accumulato ×65536 (16-bit frazione)
 	reg        [4:0]  cordic_i;               // iterazione 0..23
+	// Meta' pipeline del CORDIC: l'iterazione stava tutta in un ciclo, e la
+	// catena shift-variabile + somma a 32 bit era il percorso critico del core
+	// (~11.8 ns contro 10.416 disponibili a 96 MHz). Ora il ciclo A registra
+	// shift, segno e voce di tabella; il ciclo B fa solo le somme.
+	reg signed [31:0] cordic_xs, cordic_ys;   // cordic_x/y >>> i, registrati
+	reg signed [23:0] cordic_lut;             // voce atan, registrata
+	reg               cordic_neg;             // segno di cordic_y al ciclo A
 	reg signed [31:0] sqrt_acc, sqrt_rem;     // Newton/restoring sqrt
 	// dist 3bb0 restoring sqrt scratch (34-bit resto + radicando shiftato)
 	reg        [33:0] sqrt_rem34;
@@ -1275,6 +1318,10 @@ module SeibuCup_cop3 (
 	// FSM body
 	// ────────────────────────────────────────────────────────────────────────
 	always @(posedge clk) begin
+		// selezione per-mode sempre pronta un ciclo prima del trigger
+		dma_src_sel  <= cop_dma_src [cop_dma_mode[7:0]];
+		dma_size_sel <= cop_dma_size[cop_dma_mode[7:0]];
+		dma_dst_sel  <= cop_dma_dst [cop_dma_mode[7:0]];
 		if (reset) begin
 			fsm           <= S_IDLE;
 			return_state  <= S_IDLE;
@@ -1353,7 +1400,7 @@ module SeibuCup_cop3 (
 							// src = cop_dma_src[mode] << 6 (byte addr 0x101000+ = staging)
 							// dst = i (loop counter 0..0x13FF = renderer index)
 							// count = 0x2800/2 = 5120 words
-							dma_src <= {2'd0, cop_dma_src[cop_dma_mode[7:0]], 6'd0};
+							dma_src <= {2'd0, dma_src_sel, 6'd0};
 							dma_dst <= 16'd0;
 							dma_cnt <= 16'd5120;
 							fsm     <= D_PREP;
@@ -1363,7 +1410,7 @@ module SeibuCup_cop3 (
 							// src = cop_dma_src[mode] << 6 (0x104000 = palette staging)
 							// dst = i (loop counter 0..0x7FF = renderer index)
 							// count = 0x1000/2 = 2048 words
-							dma_src <= {2'd0, cop_dma_src[cop_dma_mode[7:0]], 6'd0};
+							dma_src <= {2'd0, dma_src_sel, 6'd0};
 							dma_dst <= 16'd0;
 							dma_cnt <= 16'd2048;
 							fsm     <= D_PREP;
@@ -1374,16 +1421,16 @@ module SeibuCup_cop3 (
 							// es. $B582 dst=$104000 nelle transizioni) la write DEVE
 							// raggiungere la BRAM, non l'ombra main-RAM: dma_copy_gen
 							// instrada al path fill per dst assoluto (come copy80).
-							dma_src <= {2'd0, cop_dma_src[cop_dma_mode[7:0]], 6'd0};
-							dma_dst <= cop_dma_dst[cop_dma_mode[7:0]] << 5; // word offset
-							dma_dst_abs  <= {2'd0, cop_dma_dst[cop_dma_mode[7:0]], 6'd0};
-							dma_copy_gen <= (({2'd0, cop_dma_dst[cop_dma_mode[7:0]], 6'd0} >= 24'h100800)
-							              && ({2'd0, cop_dma_dst[cop_dma_mode[7:0]], 6'd0} <  24'h105000))
-							             || (({2'd0, cop_dma_dst[cop_dma_mode[7:0]], 6'd0} >= 24'h107000)
-							              && ({2'd0, cop_dma_dst[cop_dma_mode[7:0]], 6'd0} <  24'h108000));
+							dma_src <= {2'd0, dma_src_sel, 6'd0};
+							dma_dst <= dma_dst_sel << 5; // word offset
+							dma_dst_abs  <= {2'd0, dma_dst_sel, 6'd0};
+							dma_copy_gen <= (({2'd0, dma_dst_sel, 6'd0} >= 24'h100800)
+							              && ({2'd0, dma_dst_sel, 6'd0} <  24'h105000))
+							             || (({2'd0, dma_dst_sel, 6'd0} >= 24'h107000)
+							              && ({2'd0, dma_dst_sel, 6'd0} <  24'h108000));
 							// size = ((size<<5) - (dst<<6) + 0x20) / 2
-							dma_cnt <= ((cop_dma_size[cop_dma_mode[7:0]] << 4)
-							           - (cop_dma_dst [cop_dma_mode[7:0]] << 5)
+							dma_cnt <= ((dma_size_sel << 4)
+							           - (dma_dst_sel << 5)
 							           + 16'd16);  // simplified, MAME size>>1
 							fsm     <= D_PREP;
 						end
@@ -1400,12 +1447,12 @@ module SeibuCup_cop3 (
 							//       = ($104FE0 - $104000 + $20)/2 = $1000/2 = $800 words.
 							// Mode 5: blend tra paldata(src) e targetdata(src+adr_rel*$400)
 							// usando pal_brightness_val (0..0x1F) come ratio fade.
-							dma_src <= {2'd0, cop_dma_src[cop_dma_mode[7:0]], 6'd0};
+							dma_src <= {2'd0, dma_src_sel, 6'd0};
 							// dst offset (entry in palette renderer): (dst<<6 - $104000)/2 = (dst<<5) - $2000
-							dma_dst <= (cop_dma_dst[cop_dma_mode[7:0]] << 5) - 16'h2000;
+							dma_dst <= (dma_dst_sel << 5) - 16'h2000;
 							// MAME size = (((size<<5) - (dst<<6) + 0x20)/2)
-							dma_cnt <= ((cop_dma_size[cop_dma_mode[7:0]] << 4)
-							           - (cop_dma_dst [cop_dma_mode[7:0]] << 5)
+							dma_cnt <= ((dma_size_sel << 4)
+							           - (dma_dst_sel << 5)
 							           + 16'd16);
 							// dma_mode_lat = $80 → branch dedicato D_FADE_*
 							dma_mode_lat <= cop_dma_mode;
@@ -1415,7 +1462,7 @@ module SeibuCup_cop3 (
 							// (decode regione, incl. SPR), dest assoluta = dst<<6 (byte addr).
 							dma_copy80  <= (cop_pal_brightness_mode != 16'd4)
 							            && (cop_pal_brightness_mode != 16'd5);
-							dma_dst_abs <= {2'd0, cop_dma_dst[cop_dma_mode[7:0]], 6'd0};
+							dma_dst_abs <= {2'd0, dma_dst_sel, 6'd0};
 							fsm <= D_PREP;
 						end
 						9'h116: begin
@@ -1425,20 +1472,20 @@ module SeibuCup_cop3 (
 							// to write to the work ram area, otherwise it RESETS in
 							// mid-animation of the title screen" → senza questo fill
 							// il gioco torna al logo da solo.
-							dma_src <= {2'd0, cop_dma_src[cop_dma_mode[7:0]], 6'd0};
+							dma_src <= {2'd0, dma_src_sel, 6'd0};
 							// length bytes = (size+1)<<4 → word = (size+1)<<3
-							dma_cnt <= ((cop_dma_size[cop_dma_mode[7:0]] + 16'd1) << 3);
+							dma_cnt <= ((dma_size_sel + 16'd1) << 3);
 							fsm     <= D_FILL_W;
 						end
 						9'h118, 9'h119, 9'h11A, 9'h11B,
 						9'h11C, 9'h11D, 9'h11E, 9'h11F: begin
 							// Skip if dst != 0 (MAME guard, dma.ipp:135)
-							if (cop_dma_dst[cop_dma_mode[7:0]] != 16'd0) begin
+							if (dma_dst_sel != 16'd0) begin
 								fsm <= S_IDLE;
 							end else begin
-								dma_src <= {2'd0, cop_dma_src[cop_dma_mode[7:0]], 6'd0};
+								dma_src <= {2'd0, dma_src_sel, 6'd0};
 								// length bytes = (size+1) << 5; we step in words → cnt = (size+1)<<4
-								dma_cnt <= ((cop_dma_size[cop_dma_mode[7:0]] + 16'd1) << 4);
+								dma_cnt <= ((dma_size_sel + 16'd1) << 4);
 								fsm     <= D_FILL_W;
 							end
 						end
@@ -1853,13 +1900,25 @@ module SeibuCup_cop3 (
 					fade_nofade  <= mode4 ? 1'b0 : paldata[15];
 					fade_pure    <= mode4 && ((cop_pal_brightness_val == 16'h0010) ||
 					                          (cop_pal_brightness_val == 16'hFFFF));
-					fade_fb_t <= fade_table_fn({tgtdata[14:10], bv});
-					fade_fb_c <= fade_table_fn({paldata[14:10], bv_xor_inv});
-					fade_fg_t <= fade_table_fn({tgtdata[9:5],  bv});
-					fade_fg_c <= fade_table_fn({paldata[9:5],  bv_xor_inv});
-					fade_fr_t <= fade_table_fn({tgtdata[4:0],  bv});
-					fade_fr_c <= fade_table_fn({paldata[4:0],  bv_xor_inv});
+					// La tabella (che contiene un moltiplicatore) e' passata a D_FADE_TAB:
+					// qui c'era in serie alla lettura dalla palette RAM ed era il collo.
 				end
+				fsm <= D_FADE_TAB;
+			end
+			// Stadio intermedio: le sei voci di tabella, calcolate su dati GIA'
+			// registrati. Il moltiplicatore non e' piu' in serie con la BRAM.
+			D_FADE_TAB: begin : fade_tab_blk
+				reg [4:0] bv2, bv2_inv;
+				bv2     = (cop_pal_brightness_mode == 16'd4)
+				          ? {cop_pal_brightness_val[3:0], 1'b0}
+				          : cop_pal_brightness_val[4:0];
+				bv2_inv = bv2 ^ 5'h1F;
+				fade_fb_t <= fade_table_fn({fade_tgtdata[14:10], bv2});
+				fade_fb_c <= fade_table_fn({fade_paldata[14:10], bv2_inv});
+				fade_fg_t <= fade_table_fn({fade_tgtdata[9:5],  bv2});
+				fade_fg_c <= fade_table_fn({fade_paldata[9:5],  bv2_inv});
+				fade_fr_t <= fade_table_fn({fade_tgtdata[4:0],  bv2});
+				fade_fr_c <= fade_table_fn({fade_paldata[4:0],  bv2_inv});
 				fsm <= D_FADE_WRITE;
 			end
 			D_FADE_WRITE: begin
@@ -1988,12 +2047,13 @@ module SeibuCup_cop3 (
 			M_0205_WAIT_SCRN: begin
 				// Wait 1 stato: read 0x1C valida 2 stati dopo emit (latency BRAM=2).
 				// Senza, WR_SCRN leggeva addr vecchio (vel_lo) -> scroll corrotto.
+				scrn_delta <= tmp32_a[31:16] - tmp_hi;   // non dipende dalla lettura
 				fsm <= M_0205_WR_SCRN;
 			end
 			M_0205_WR_SCRN: begin
 				dma_ram_we    <= 1'b1;
 				dma_ram_addr  <= cop_regs_byte_addr(0, 16'h001C + {12'd0, macro_offset, 2'd0}) >> 1;
-				dma_ram_wdata <= dma_src_rdata + (tmp32_a[31:16] - tmp_hi);
+				dma_ram_wdata <= dma_src_rdata + scrn_delta;
 				fsm <= S_IDLE;
 			end
 
@@ -2032,17 +2092,20 @@ module SeibuCup_cop3 (
 					tmp32_a <= {tmp_hi, tmp_lo} - {dma_src_rdata, 16'h0};
 				fsm <= M_0905_WR_HI;
 			end
+			// Ciclo A: SOLO la somma bassa a 17 bit; il bit 16 e' il carry (o il
+			// borrow). Prima qui c'erano una somma, un confronto e una seconda somma
+			// in fila dopo la lettura BRAM: era il percorso critico del core.
 			M_0905_WR_HI: begin
-				// dma_src_rdata = grav_lo. Combina vel+grav (con carry/borrow propagato).
-				if (cmd_value[0]) begin
-					tmp32_a[15:0] <= tmp32_a[15:0] + dma_src_rdata;
-					// carry propagato a hi
-					dma_ram_wdata <= tmp32_a[31:16] + ((tmp32_a[15:0] + dma_src_rdata) < tmp32_a[15:0] ? 16'd1 : 16'd0);
-				end else begin
-					tmp32_a[15:0] <= tmp32_a[15:0] - dma_src_rdata;
-					// borrow propagato a hi
-					dma_ram_wdata <= tmp32_a[31:16] - ((tmp32_a[15:0] < dma_src_rdata) ? 16'd1 : 16'd0);
-				end
+				if (cmd_value[0]) {p905_cb, p905_low} <= {1'b0, tmp32_a[15:0]} + {1'b0, dma_src_rdata};
+				else              {p905_cb, p905_low} <= {1'b0, tmp32_a[15:0]} - {1'b0, dma_src_rdata};
+				dma_ram_we <= 1'b0;   // la scrittura avviene nel ciclo B
+				fsm <= M_0905_WR_HI_B;
+			end
+			// Ciclo B: solo la somma alta, sul carry gia' registrato.
+			M_0905_WR_HI_B: begin
+				tmp32_a[15:0] <= p905_low;
+				dma_ram_wdata <= cmd_value[0] ? (tmp32_a[31:16] + {15'd0, p905_cb})
+				                              : (tmp32_a[31:16] - {15'd0, p905_cb});
 				dma_ram_we    <= 1'b1;
 				dma_ram_addr  <= cop_regs_byte_addr(0, 16'h0010 + {12'd0, macro_offset, 2'd0}) >> 1;
 				fsm <= M_0905_WR_LO;
@@ -2112,39 +2175,48 @@ module SeibuCup_cop3 (
 					// <<8 strariperebbe signed[31:0] per |delta|>=128px -> overflow ->
 					// angolo sbagliato. atan e' scale-invariant: i dword pieni bastano
 					// (max |axdy|~2^25, *gain 1.65 ~2^26, dentro signed[31:0]).
-					begin : atan_init_blk
-						reg signed [31:0] dx32, dy32, axdy, aydx;
-						dx32 = $signed(tmp32_a) - $signed(tmp32_b);
-						dy32 = $signed(math_dx) - $signed({math_dy[31:16], dma_src_rdata});
-						axdy = (dy32 < 0) ? -dy32 : dy32;        // |dy|
-						aydx = (dy32 < 0) ? -dx32 : dx32;        // dx col segno di dy
-						cordic_x <= axdy;                        // dword pieno (coord<<16)
-						cordic_y <= aydx;
-						cordic_z <= 24'sd0;
-						math_dy  <= dy32;
-						latch_dx <= dx32;   // per il 3bb0 che segue
-						latch_dy <= dy32;
-					end
+					// Ciclo A: SOLO le due differenze a 32 bit. Dopo la lettura BRAM ci deve
+					// stare una sottrazione sola: il valore assoluto (che e' un'altra somma a
+					// 32 bit) e il carico del CORDIC passano al ciclo B.
+					calc_dx <= $signed(tmp32_a) - $signed(tmp32_b);
+					calc_dy <= $signed(math_dx) - $signed({math_dy[31:16], dma_src_rdata});
+					fsm <= M_138E_CALC_B;
+				end
+				// Ciclo B: valori assoluti e carico del CORDIC, su valori gia' registrati.
+				M_138E_CALC_B: begin
+					cordic_x <= (calc_dy < 0) ? -calc_dy : calc_dy;   // |dy|
+					cordic_y <= (calc_dy < 0) ? -calc_dx : calc_dx;   // dx col segno di dy
+					cordic_z <= 24'sd0;
+					math_dy  <= calc_dy;
+					latch_dx <= calc_dx;   // per il 3bb0 che segue
+					latch_dy <= calc_dy;
 					cordic_i <= 5'd0;
 					fsm <= M_138E_CORDIC;
 				end
+				// Ciclo A: solo shift, segno e tabella. Nessuna somma.
 				M_138E_CORDIC: begin
-					begin : atan_cordic_blk
-						reg signed [31:0] xs, ys;
-						xs = cordic_x >>> cordic_i;
-						ys = cordic_y >>> cordic_i;
-						if (cordic_y >= 0) begin
-							cordic_x <= cordic_x + ys;
-							cordic_y <= cordic_y - xs;
-							cordic_z <= cordic_z + cordic_atan_lut(cordic_i);
-						end else begin
-							cordic_x <= cordic_x - ys;
-							cordic_y <= cordic_y + xs;
-							cordic_z <= cordic_z - cordic_atan_lut(cordic_i);
-						end
+					cordic_xs  <= cordic_x >>> cordic_i;
+					cordic_ys  <= cordic_y >>> cordic_i;
+					cordic_neg <= (cordic_y < 0);
+					cordic_lut <= cordic_atan_lut(cordic_i);
+					fsm <= M_138E_CORDIC_B;
+				end
+				// Ciclo B: solo somme, su operandi gia' registrati.
+				M_138E_CORDIC_B: begin
+					if (!cordic_neg) begin
+						cordic_x <= cordic_x + cordic_ys;
+						cordic_y <= cordic_y - cordic_xs;
+						cordic_z <= cordic_z + cordic_lut;
+					end else begin
+						cordic_x <= cordic_x - cordic_ys;
+						cordic_y <= cordic_y + cordic_xs;
+						cordic_z <= cordic_z - cordic_lut;
 					end
 					if (cordic_i == 5'd23) fsm <= M_138E_WR;
-					else                   cordic_i <= cordic_i + 5'd1;
+					else begin
+						cordic_i <= cordic_i + 5'd1;
+						fsm      <= M_138E_CORDIC;
+					end
 				end
 				M_138E_WR: begin
 					begin : atan_wr_blk
@@ -3087,13 +3159,14 @@ module SeibuCup_cop3 (
 			end
 			// Bubble sort: swap SOLO se strettamente fuori ordine = stabile come
 			// lo std::stable_sort di MAME. 1 confronto/ciclo, <= ~270 cicli per n=22.
-			M_SORT_CMP: begin : sort_cmp_blk
-				reg do_swap;
-				do_swap = (cop_sort_param == 16'd1)
-				            ? (sort_key[sort_j] > sort_key[sort_j + 6'd1])
-				            : (cop_sort_param == 16'd2)
-				              ? (sort_key[sort_j] < sort_key[sort_j + 6'd1])
-				              : 1'b0;
+			// Ciclo A: SOLO le letture indicizzate. Prima, in un ciclo solo, c'erano
+			// due mux 60:1, il comparatore e il write-enable di tutti e 60 i registri
+			// in fila: era il percorso critico del core. Qui resta il mux e basta.
+			M_SORT_CMP: begin
+				sort_ka <= sort_key[sort_j];
+				sort_kb <= sort_key[sort_j + 6'd1];
+				sort_va <= sort_val[sort_j];
+				sort_vb <= sort_val[sort_j + 6'd1];
 				if (({1'b0, sort_j} + {1'b0, sort_pass} + 7'd1) >= {1'b0, sort_n}) begin
 					if (!sort_swapped || (({1'b0, sort_pass} + 7'd2) >= {1'b0, sort_n})) begin
 						sort_i <= 6'd0;
@@ -3104,15 +3177,23 @@ module SeibuCup_cop3 (
 						sort_swapped <= 1'b0;
 					end
 				end else begin
-					if (do_swap) begin
-						sort_key[sort_j]        <= sort_key[sort_j + 6'd1];
-						sort_key[sort_j + 6'd1] <= sort_key[sort_j];
-						sort_val[sort_j]        <= sort_val[sort_j + 6'd1];
-						sort_val[sort_j + 6'd1] <= sort_val[sort_j];
-						sort_swapped <= 1'b1;
-					end
-					sort_j <= sort_j + 6'd1;
+					fsm <= M_SORT_SWAP;
 				end
+			end
+			// Ciclo B: confronto e scambio, su valori gia' registrati.
+			M_SORT_SWAP: begin : sort_swap_blk
+				reg do_swap;
+				do_swap = (cop_sort_param == 16'd1) ? (sort_ka > sort_kb)
+				        : (cop_sort_param == 16'd2) ? (sort_ka < sort_kb) : 1'b0;
+				if (do_swap) begin
+					sort_key[sort_j]        <= sort_kb;
+					sort_key[sort_j + 6'd1] <= sort_ka;
+					sort_val[sort_j]        <= sort_vb;
+					sort_val[sort_j + 6'd1] <= sort_va;
+					sort_swapped <= 1'b1;
+				end
+				sort_j <= sort_j + 6'd1;
+				fsm <= M_SORT_CMP;
 			end
 			M_SORT_ST: begin
 				dma_ram_we    <= 1'b1;                          // be = 2'b11 (word)

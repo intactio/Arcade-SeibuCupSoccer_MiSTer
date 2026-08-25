@@ -65,9 +65,11 @@ wire vblank_pulse = vblank & ~vblank_d;
 // Centro X = (4+255)/2 = 129, top-left X = 129-48 = 81
 // Centro Y = (8+246)/2 = 127, top-left Y = 127-48 = 79
 // =====================================================================
-// SeibuCup: render_x 0..255, render_y 0..223. Logo 96x96 centrato.
-localparam [8:0] LOGO_X    = 9'd80;   // (256-96)/2 = 80
-localparam [8:0] LOGO_Y    = 9'd64;   // (224-96)/2 = 64
+// SeibuCup: render_x 0..319, render_y 0..239 (320x240 attivi). Logo 96x96
+// centrato. ATTENZIONE: le costanti qui sotto erano rimaste quelle del
+// porting da un gioco largo 256 -> tutto l'overlay usciva spostato a sinistra.
+localparam [8:0] LOGO_X    = 9'd112;  // (320-96)/2 = 112
+localparam [8:0] LOGO_Y    = 9'd72;   // (240-96)/2 = 72
 localparam [8:0] LOGO_XEND = LOGO_X + 9'd96;
 localparam [8:0] LOGO_YEND = LOGO_Y + 9'd96;
 
@@ -112,7 +114,7 @@ wire logo_opaque = 1'b1;
 
 // =====================================================================
 // Header "SUPPORTERS" — top, centrato.
-// 10 char × 8 = 80 px. Centro X = 129, ORIGIN_X = 129-40 = 89.
+// 10 char × 8 = 80 px, centrati su 320: (320-80)/2 = 120.
 // =====================================================================
 wire       header_on;
 wire [1:0] header_tier;
@@ -120,7 +122,7 @@ pause_text #(
 	.W_CHARS      (10),
 	.H_CHARS      (1),
 	.MSG_ROWS     (1),
-	.ORIGIN_X     (10'd88),    // (256-80)/2 = 88 (Blood Bros 256 wide)
+	.ORIGIN_X     (10'd120),   // (320-80)/2 = 120
 	.ORIGIN_Y     (9'd16),     // top + 16 px margine
 	.SCROLL_EN    (0),
 	.FONT_FILE    ("logo/font_darius.hex"),
@@ -137,8 +139,10 @@ pause_text #(
 
 // =====================================================================
 // Patron scroll — quadrante centrale.
-// 30 char × 8 = 240 px. Schermo 252 visibili → ORIGIN_X = 4 + (252-240)/2 = 10.
-// 24 row × 8 = 192 px visibili. MSG_ROWS=66 (loop scroll lungo).
+// 30 char × 8 = 240 px, centrati su 320: (320-240)/2 = 40.
+// 24 row × 8 = 192 px visibili. MSG_ROWS = righe totali di patrons.mem
+// (loop scroll lungo): tenerlo allineato al file, o le ultime righe
+// vengono troncate dal generatore senza dire niente.
 // ORIGIN_Y = 32 (sotto SUPPORTERS).
 // =====================================================================
 wire       patron_on;
@@ -146,8 +150,8 @@ wire [1:0] patron_tier;
 pause_text #(
 	.W_CHARS       (30),
 	.H_CHARS       (24),
-	.MSG_ROWS      (68),
-	.ORIGIN_X      (10'd8),     // (256-240)/2 = 8 (Blood Bros 256 wide)
+	.MSG_ROWS      (73),
+	.ORIGIN_X      (10'd40),    // (320-240)/2 = 40
 	.ORIGIN_Y      (9'd32),     // sotto header
 	.SCROLL_EN     (1),
 	.SCROLL_PERIOD (3),

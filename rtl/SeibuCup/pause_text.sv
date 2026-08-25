@@ -121,13 +121,24 @@ wire [2:0]                    pix_row = dy_eff[2:0];
 // =====================================================================
 // MSG ROM: W_CHARS × MSG_ROWS word, 9-bit per char (2 bit tier + 7 bit ASCII)
 // =====================================================================
+// PROVATO E SCARTATO (2026-08-22): arrotondare MSG_DEPTH al multiplo di 1024
+// NON riduce i blocchi M10K. Con 30x73 = 2190 word il ROM ne occupa 5 sia
+// dichiarato 2190 sia dichiarato 3072 — l'arrotondamento cambia solo i bit
+// dichiarati (19710 -> 27648). Non rifarlo.
 localparam MSG_DEPTH = W_CHARS * MSG_ROWS;
 localparam MSG_AW    = $clog2(MSG_DEPTH);
 
 (* ramstyle = "M10K" *) reg [8:0] msg_rom [0:MSG_DEPTH-1];
 initial $readmemh(MSG_FILE, msg_rom);
 
-wire [MSG_AW-1:0] msg_addr = char_row * W_CHARS + char_col;
+// Base riga REGISTRATA: qui c'era una moltiplicazione (char_row * W_CHARS)
+// fra le coordinate del raster e l'indirizzo della ROM, in combinatoria, ed
+// era il percorso critico del core. char_row cambia una volta ogni 8 righe
+// di schermo, all'inizio della riga, quando mancano centinaia di cicli al
+// primo pixel di testo: il valore registrato e' sempre gia' quello giusto.
+reg [MSG_AW-1:0] row_base;
+always @(posedge clk) row_base <= char_row * W_CHARS;
+wire [MSG_AW-1:0] msg_addr = row_base + char_col;
 reg  [8:0] msg_q;
 always @(posedge clk) msg_q <= msg_rom[msg_addr];
 

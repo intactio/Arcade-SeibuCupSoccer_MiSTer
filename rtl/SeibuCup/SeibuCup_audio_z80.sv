@@ -60,12 +60,33 @@ module SeibuCup_audio_z80 (
 	input  wire  [7:0] oki_rom_data,
 	input  wire        oki_rom_ok,
 
-	input  wire  [5:0] fm_vol_q44,
-	input  wire  [5:0] oki_vol_q44,
+	input  wire  [2:0] fm_vol_sel,
+	input  wire  [2:0] oki_vol_sel,
+	// Volume per-canale da OSD (schema Raiden): 0=Default, 1=Mute, 2+ = % del Default
+	input  wire  [2:0] fm_ch_vol_sel0,
+	input  wire  [2:0] fm_ch_vol_sel1,
+	input  wire  [2:0] fm_ch_vol_sel2,
+	input  wire  [2:0] fm_ch_vol_sel3,
+	input  wire  [2:0] fm_ch_vol_sel4,
+	input  wire  [2:0] fm_ch_vol_sel5,
+	input  wire  [2:0] fm_ch_vol_sel6,
+	input  wire  [2:0] fm_ch_vol_sel7,
+	input  wire  [2:0] fm_ch_vol_sel8,
+	input  wire  [2:0] oki_ch_vol_sel0,
+	input  wire  [2:0] oki_ch_vol_sel1,
+	input  wire  [2:0] oki_ch_vol_sel2,
+	input  wire  [2:0] oki_ch_vol_sel3,
 
 	output reg signed [15:0] audio_l,
 	output reg signed [15:0] audio_r
 );
+
+	// Reset REGISTRATO per i due chip audio. Il rilascio del reset arrivava ai
+	// registri di guadagno dell'ADPCM 48 ps oltre il limite (recovery -0.048,
+	// l'ultima analisi negativa del core). Uscire dal reset un ciclo dopo, per
+	// un chip audio, non cambia nulla.
+	reg reset_r;
+	always @(posedge clk) reset_r <= reset;
 
 	// ─── Clock enable: clk_sys (96 MHz) → Z80/YM 3.58 MHz, OKI 1.0 MHz ──────
 	// Z80/YM: 96/3.579545 = 26.82 → div 27 (3.555 MHz)
@@ -376,14 +397,78 @@ module SeibuCup_audio_z80 (
 		                       8'hFF;
 	assign snd_rdata = {8'h00, main_r_data};
 
+	// ─── Volume da OSD (identico a Raiden) ──────────────────────────────────
+	// Guadagni di partenza tarati, NON unita': l'OKI sta piu' alto dell'FM.
+	// Raiden usa 0x40/0x70, ma sono tarati sul mix di Raiden: su Cup Soccer
+	// il livello assoluto risultava troppo alto. Qui si tiene l'FM al valore
+	// gia' collaudato (1.0x) e si applica solo il RAPPORTO di Raiden, che e'
+	// la parte che serviva: OKI 1.75x l'FM.
+	// Tarati a orecchio sul core: il rapporto giusto e' OKI ~0.875x l'FM (il
+	// 1.75x di Raiden mandava il meter in rosso, perche' INTERPOL(1) porta gia'
+	// guadagno suo). Poi entrambi scesi di ~3 dB.
+	// Q4.4 -> passo 1/16: il rapporto 7/8 e' esatto solo a 0 dB (16/14) e a
+	// -6 dB (8/7); a -3 dB la coppia migliore e' 11/10 (errore +0.3 dB).
+	localparam [7:0] DEF_GAIN_FM  = 8'h0B;   // FM  0.6875x (-3.3 dB)
+	localparam [7:0] DEF_GAIN_OKI = 8'h0A;   // OKI 0.625x  (-2.9 dB)
+
+	// Scala ridotta a 3 bit (8 voci): oltre il 200% e' fuori scala e sprecava
+	// un bit per canale. Stessa semantica di Raiden: 0=Default, 1=Mute.
+	function [11:0] osd_mul_aud;
+		input [2:0] sel;
+		case (sel)
+			3'd2:  osd_mul_aud = 12'd64;    // 25%
+			3'd3:  osd_mul_aud = 12'd128;   // 50%
+			3'd4:  osd_mul_aud = 12'd192;   // 75%
+			3'd5:  osd_mul_aud = 12'd256;   // 100%
+			3'd6:  osd_mul_aud = 12'd384;   // 150%
+			3'd7:  osd_mul_aud = 12'd512;   // 200%
+			default: osd_mul_aud = 12'd256;
+		endcase
+	endfunction
+
+	// sel: 0=Default(tarato), 1=Mute, 2+ = % del Default.
+	function [7:0] gain_resolve;
+		input [2:0] sel;
+		input [7:0] def_g;
+		reg [19:0] scaled;
+		begin
+			case (sel)
+				3'd0: gain_resolve = def_g;    // Default (tarato)
+				3'd1: gain_resolve = 8'h00;    // Mute
+				default: begin
+					scaled = def_g * osd_mul_aud(sel);
+					gain_resolve = (scaled[19:8] > 12'hFF) ? 8'hFF : scaled[15:8];
+				end
+			endcase
+		end
+	endfunction
+
 	// ─── YM3812 (jtopl2) mono — CUPSOC usa OPL2, non OPM ────────────────────
 	// MAME cupsoc machine config: ym3812_device @ 14318180/4 (legionna.cpp).
 	// Blocco identico a Legionnaire (stesso chip, known-good su HW).
 	wire [7:0] ym_dout;
 	wire signed [15:0] ym_snd;
 	wire        ym_sample;
+
+	// Gain per-canale FM (default 0x10 = unita' -> mix identico a prima)
+	// Registrati: i selettori vengono dall'OSD (velocita' umana). Lasciarli
+	// combinatori li metteva in serie al moltiplicatore del chip.
+	reg [7:0] fm_chvol0, fm_chvol1, fm_chvol2, fm_chvol3, fm_chvol4,
+	          fm_chvol5, fm_chvol6, fm_chvol7, fm_chvol8;
+	always @(posedge clk) begin
+		fm_chvol0 <= gain_resolve(fm_ch_vol_sel0, 8'h10);
+		fm_chvol1 <= gain_resolve(fm_ch_vol_sel1, 8'h10);
+		fm_chvol2 <= gain_resolve(fm_ch_vol_sel2, 8'h10);
+		fm_chvol3 <= gain_resolve(fm_ch_vol_sel3, 8'h10);
+		fm_chvol4 <= gain_resolve(fm_ch_vol_sel4, 8'h10);
+		fm_chvol5 <= gain_resolve(fm_ch_vol_sel5, 8'h10);
+		fm_chvol6 <= gain_resolve(fm_ch_vol_sel6, 8'h10);
+		fm_chvol7 <= gain_resolve(fm_ch_vol_sel7, 8'h10);
+		fm_chvol8 <= gain_resolve(fm_ch_vol_sel8, 8'h10);
+	end
+
 	jtopl2 u_jtopl2 (
-		.rst    (reset),
+		.rst    (reset_r),
 		.clk    (clk),
 		.cen    (cen_z80_g),
 		.din    (z80_dout),
@@ -392,6 +477,8 @@ module SeibuCup_audio_z80 (
 		.wr_n   (z80_wr_n),
 		.dout   (ym_dout),
 		.irq_n  (ym_irq_n),
+		.fmvol0(fm_chvol0), .fmvol1(fm_chvol1), .fmvol2(fm_chvol2), .fmvol3(fm_chvol3), .fmvol4(fm_chvol4),
+		.fmvol5(fm_chvol5), .fmvol6(fm_chvol6), .fmvol7(fm_chvol7), .fmvol8(fm_chvol8),
 		.snd    (ym_snd),
 		.sample (ym_sample)
 	);
@@ -407,8 +494,19 @@ module SeibuCup_audio_z80 (
 	wire        oki_sample;
 	wire [17:0] oki_addr_int;
 
-	jt6295 #(.INTERPOL(0)) u_jt6295 (
-		.rst       (reset),
+	// Gain per-voce OKI (default 0x10 = unita' -> mix identico a prima)
+	reg [7:0] oki_chvol0, oki_chvol1, oki_chvol2, oki_chvol3;
+	always @(posedge clk) begin
+		oki_chvol0 <= gain_resolve(oki_ch_vol_sel0, 8'h10);
+		oki_chvol1 <= gain_resolve(oki_ch_vol_sel1, 8'h10);
+		oki_chvol2 <= gain_resolve(oki_ch_vol_sel2, 8'h10);
+		oki_chvol3 <= gain_resolve(oki_ch_vol_sel3, 8'h10);
+	end
+
+	// INTERPOL(1) come Raiden: upsampler FIR 4x (jt6295_up4.hex nella root del
+	// progetto) + compensazione x4 dell'accumulatore. Costa 1 M10K e 1 DSP.
+	jt6295 #(.INTERPOL(1)) u_jt6295 (
+		.rst       (reset_r),
 		.clk       (clk),
 		.cen       (cen_oki_g),
 		.ss        (1'b1),                // PIN7 = HIGH
@@ -418,6 +516,10 @@ module SeibuCup_audio_z80 (
 		.rom_addr  (oki_addr_int),
 		.rom_data  (oki_rom_data),
 		.rom_ok    (oki_rom_ok),
+		.chvol0    (oki_chvol0),
+		.chvol1    (oki_chvol1),
+		.chvol2    (oki_chvol2),
+		.chvol3    (oki_chvol3),
 		.sound     (oki_sound),
 		.sample    (oki_sample)
 	);
@@ -468,22 +570,46 @@ module SeibuCup_audio_z80 (
 		.REG     ()
 	);
 
-	// ─── Mixer audio: YM3812 mono + OKI mono → AUDIO_L/R ────────────────────
-	wire signed [22:0] ym_v   = $signed(ym_snd)              * $signed({1'b0, fm_vol_q44});
-	wire signed [22:0] oki_v  = $signed({oki_sound, 2'b00})  * $signed({1'b0, oki_vol_q44});
-	wire signed [18:0] ym_s   = ym_v[22:4];
-	wire signed [18:0] oki_s  = oki_v[22:4];
-	wire signed [19:0] mix    = {ym_s[18], ym_s} + {oki_s[18], oki_s};
+	// ─── Mixer audio: YM3812 mono + OKI mono → AUDIO_L/R (schema Raiden) ─────
+	// Registrati: erano il percorso critico (status[86] dell'OSD entrava
+	// combinatorio in gain_resolve -> moltiplicatore audio -> soft-clip).
+	reg [7:0] fm_gain, oki_gain;
+	always @(posedge clk) begin
+		fm_gain  <= gain_resolve(fm_vol_sel,  DEF_GAIN_FM);
+		oki_gain <= gain_resolve(oki_vol_sel, DEF_GAIN_OKI);
+	end
+
+	// ─── Somma larga + soft-clip sui SOLI picchi (no crackling, niente tagli) ─
+	// Somma su bus largo (stessi gain), poi soft-clip SOLO in cima. Sotto TH
+	// (~-1 dBFS) tutto e' LINEARE = IDENTICO al mixer pulito: bassi, medi, corpi
+	// e code delle esplosioni INTATTI. SOLO le punte che nel pulito clippavano
+	// dure (= il crackling) vengono arrotondate dolci (parabola tangente in TH,
+	// slope 0 al tetto = niente gradino) verso un tetto appena sotto il fondo
+	// scala. Waveshaper STATICO -> niente pumping, dinamica intatta.
+	wire signed [15:0] oki_ext16  = {oki_sound, 2'b0}; // 14->16bit x4: OKI a scala FM
+	wire signed [24:0] fm_scaled  = ym_snd    * $signed({1'b0, fm_gain});
+	wire signed [24:0] oki_scaled = oki_ext16 * $signed({1'b0, oki_gain});
+	wire signed [25:0] mix_sum    = $signed({fm_scaled[24],  fm_scaled})
+	                              + $signed({oki_scaled[24], oki_scaled});
+	wire signed [25:0] mix_ovr    = mix_sum >>> 4;                 // scala sample (gain Q4.4)
+
+	localparam signed [25:0] TH   = 26'sd29000;   // ~-1 dBFS: sotto = IDENTICO al pulito
+	localparam signed [25:0] TWOR = 26'sd4096;    // 2R (R=2048) -> tetto TH+R = 31048 (-0.4 dBFS)
+	wire signed [25:0] amag = mix_ovr[25] ? -mix_ovr : mix_ovr;   // |mix|
+	wire signed [25:0] d0   = amag - TH;
+	wire signed [25:0] dc   = d0[25] ? 26'sd0 : (d0 >= TWOR ? TWOR : d0);   // clamp [0, 2R]
+	wire signed [28:0] dc2  = dc * dc;
+	wire signed [25:0] yabs = (amag <= TH) ? amag : (TH + dc - (dc2 >>> 13));  // 4R = 2^13
+	wire signed [25:0] yfull = mix_ovr[25] ? -yabs : yabs;
+	wire signed [15:0] mix_out = yfull[15:0];
 
 	always @(posedge clk) begin
 		if (reset) begin
 			audio_l <= 16'sd0;
 			audio_r <= 16'sd0;
 		end else begin
-			audio_l <= (mix > 20'sd32767)   ? 16'sh7FFF :
-			           (mix < -20'sd32767) ? 16'sh8000 :
-			                                  mix[15:0];
-			audio_r <= audio_l;
+			audio_l <= mix_out;
+			audio_r <= mix_out;
 		end
 	end
 

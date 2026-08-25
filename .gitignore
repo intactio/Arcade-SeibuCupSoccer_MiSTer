@@ -41,6 +41,13 @@ rom/
 *.zip
 *.bin
 *.hex
+# ECCEZIONI: questi .hex NON sono dump di ROM, sono dati che il core carica con
+# $readmemh e senza i quali non compila.
+#   font_darius.hex  -> font dell'overlay di pausa (pause_text.sv)
+#   jt6295_up4*.hex  -> coefficienti del FIR 4x, usati con INTERPOL(1)
+!logo/font_darius.hex
+!jt6295_up4.hex
+!rtl/sound/jt6295/*.hex
 
 # ─── Log e temporanei ───────────────────────────────────────────────────────
 *.log

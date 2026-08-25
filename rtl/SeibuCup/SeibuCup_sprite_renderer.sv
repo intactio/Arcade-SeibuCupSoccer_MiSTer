@@ -245,7 +245,13 @@ module SeibuCup_sprite_renderer (
 	// Posizione X del primo pixel della mezza-riga sullo schermo.
 	//   dx = sp_x + tile_x_pf*16 + col_in_tile, col_in_tile = pf_side*8 + k
 	//   flipX: col_in_tile = 15 - col_in_tile
-	wire signed [10:0] base_x = sp_x + ({6'd0, tile_x_pf, 4'd0});
+	// REGISTRATO per timing: questo sommatore stava in serie col crossbar a 8
+	// corsie che pilota il dato dei line buffer, ed era il percorso critico del
+	// core. sp_x e tile_x_pf sono fermi da almeno due cicli quando si emette
+	// (SC_NEXT_TX li cambia, poi passano SC_ROM_REQ e SC_ROM_W prima di
+	// SC_DECODE), quindi il valore registrato e' gia' quello giusto.
+	reg signed [10:0] base_x;
+	always @(posedge clk) base_x <= sp_x + ({6'd0, tile_x_pf, 4'd0});
 
 	function signed [10:0] dx_at;
 		input integer k;
@@ -257,14 +263,22 @@ module SeibuCup_sprite_renderer (
 		end
 	endfunction
 
-	wire signed [10:0] dx0 = dx_at(0);
-	wire signed [10:0] dx1 = dx_at(1);
-	wire signed [10:0] dx2 = dx_at(2);
-	wire signed [10:0] dx3 = dx_at(3);
-	wire signed [10:0] dx4 = dx_at(4);
-	wire signed [10:0] dx5 = dx_at(5);
-	wire signed [10:0] dx6 = dx_at(6);
-	wire signed [10:0] dx7 = dx_at(7);
+	// REGISTRATI per timing: questi otto sommatori stavano in serie col
+	// crossbar a 8 corsie che pilota il dato dei line buffer (10.267 ns di
+	// solo dato su 10.416 disponibili). Il calcolo avviene mentre la FSM
+	// aspetta la ROM in SC_ROM_W, dove base_x e pf_side sono gia' fermi:
+	// nessun ciclo in piu', solo lavoro spostato dove c'era attesa.
+	reg signed [10:0] dx0, dx1, dx2, dx3, dx4, dx5, dx6, dx7;
+	always @(posedge clk) begin
+		dx0 <= dx_at(0);
+		dx1 <= dx_at(1);
+		dx2 <= dx_at(2);
+		dx3 <= dx_at(3);
+		dx4 <= dx_at(4);
+		dx5 <= dx_at(5);
+		dx6 <= dx_at(6);
+		dx7 <= dx_at(7);
+	end
 
 	// Mask "scrivibile": pen != 15 e dx in [0,320) (320 pixel visibili)
 	wire wr0 = (pen0 != 4'd15) && (dx0 >= 0) && (dx0 < 320);
@@ -300,22 +314,24 @@ module SeibuCup_sprite_renderer (
 	reg [5:0]  bank_row [0:7];
 	reg [13:0] bank_wd  [0:7];
 
+	// Crossbar PER CORSIA invece che per pixel. La priorita' e' identica —
+	// vince il pixel di indice piu' basso che colpisce una corsia — ma prima
+	// ogni pixel doveva escludere in catena tutti i precedenti: sul pixel 7
+	// erano sette confronti in fila, ed era il percorso critico del core.
+	// Scritta per corsia, gli otto confronti avvengono in parallelo.
 	always @(*) begin : bank_select
-		integer b;
-		for (b = 0; b < 8; b = b + 1) begin
-			bank_we[b]  = 1'b0;
-			bank_row[b] = 6'd0;
-			bank_wd[b]  = 14'd0;
+		integer L;
+		for (L = 0; L < 8; L = L + 1) begin
+			if      (wr0 && ln0 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw0_a; bank_wd[L] = wd0; end
+			else if (wr1 && ln1 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw1_a; bank_wd[L] = wd1; end
+			else if (wr2 && ln2 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw2_a; bank_wd[L] = wd2; end
+			else if (wr3 && ln3 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw3_a; bank_wd[L] = wd3; end
+			else if (wr4 && ln4 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw4_a; bank_wd[L] = wd4; end
+			else if (wr5 && ln5 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw5_a; bank_wd[L] = wd5; end
+			else if (wr6 && ln6 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw6_a; bank_wd[L] = wd6; end
+			else if (wr7 && ln7 == L[2:0]) begin bank_we[L] = 1'b1; bank_row[L] = rw7_a; bank_wd[L] = wd7; end
+			else                          begin bank_we[L] = 1'b0; bank_row[L] = 6'd0;  bank_wd[L] = 14'd0; end
 		end
-		// Priority encoder: step basso vince in caso di collisione di lane (raro).
-		if (wr0) begin bank_we[ln0] = 1'b1; bank_row[ln0] = rw0_a; bank_wd[ln0] = wd0; end
-		if (wr1 && !(wr0 && ln0==ln1)) begin bank_we[ln1] = 1'b1; bank_row[ln1] = rw1_a; bank_wd[ln1] = wd1; end
-		if (wr2 && !((wr0 && ln0==ln2) || (wr1 && ln1==ln2))) begin bank_we[ln2] = 1'b1; bank_row[ln2] = rw2_a; bank_wd[ln2] = wd2; end
-		if (wr3 && !((wr0 && ln0==ln3) || (wr1 && ln1==ln3) || (wr2 && ln2==ln3))) begin bank_we[ln3] = 1'b1; bank_row[ln3] = rw3_a; bank_wd[ln3] = wd3; end
-		if (wr4 && !((wr0 && ln0==ln4) || (wr1 && ln1==ln4) || (wr2 && ln2==ln4) || (wr3 && ln3==ln4))) begin bank_we[ln4] = 1'b1; bank_row[ln4] = rw4_a; bank_wd[ln4] = wd4; end
-		if (wr5 && !((wr0 && ln0==ln5) || (wr1 && ln1==ln5) || (wr2 && ln2==ln5) || (wr3 && ln3==ln5) || (wr4 && ln4==ln5))) begin bank_we[ln5] = 1'b1; bank_row[ln5] = rw5_a; bank_wd[ln5] = wd5; end
-		if (wr6 && !((wr0 && ln0==ln6) || (wr1 && ln1==ln6) || (wr2 && ln2==ln6) || (wr3 && ln3==ln6) || (wr4 && ln4==ln6) || (wr5 && ln5==ln6))) begin bank_we[ln6] = 1'b1; bank_row[ln6] = rw6_a; bank_wd[ln6] = wd6; end
-		if (wr7 && !((wr0 && ln0==ln7) || (wr1 && ln1==ln7) || (wr2 && ln2==ln7) || (wr3 && ln3==ln7) || (wr4 && ln4==ln7) || (wr5 && ln5==ln7) || (wr6 && ln6==ln7))) begin bank_we[ln7] = 1'b1; bank_row[ln7] = rw7_a; bank_wd[ln7] = wd7; end
 	end
 
 	always @(posedge clk) begin

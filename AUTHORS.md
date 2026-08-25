@@ -1,15 +1,12 @@
 # Authors and Credits
 
-## SeibuCup_MiSTer core
+## Godzilla_MiSTer core
 
 **Author**: Umberto Parisi ([rmonic79](https://github.com/rmonic79))
 
-The original RTL source files for the Seibu Cup Soccer-specific logic
-(under `rtl/SeibuCup/` and the project wrapper `SeibuCup.sv`) are
-copyright Umberto Parisi and distributed under GNU GPL v3 or later.
-
-The **CRT Adjust** module (`crt_adjust.sv`) was developed together with
-Andrea Bogazzi ([@asturur](https://github.com/asturur)).
+The original RTL source files for the Godzilla-specific logic (under
+`rtl/Godzilla/` and the project wrapper `Godzilla.sv`) are copyright
+Umberto Parisi and distributed under GNU GPL v3 or later.
 
 ## Third-party components
 
@@ -26,27 +23,32 @@ most restrictive upstream (JTFRAME / JTCORES).
 | **JTOPL** — YM3812 OPL2 FM synthesizer | Jose Tejada | [jotego/jtopl](https://github.com/jotego/jtopl) | GPL-3 |
 | **JT6295** — OKI M6295 ADPCM sample player | Jose Tejada | [jotego/jt6295](https://github.com/jotego/jt6295) | GPL-3 |
 | **sdram.sv** — SDRAM controller | Sorgelig ([sorgelig](https://github.com/sorgelig)) | [MiSTer-devel](https://github.com/MiSTer-devel) | GPL-3 |
-| **ddram_sprite.sv** — DDR3 reader for sprite ROM, derived from `ddram_4port.sv` | Sorgelig / MiSTer-devel | [MiSTer-devel](https://github.com/MiSTer-devel) | GPL-3 |
 | **sys/ framework** — MiSTer HPS/IO, OSD, video scaler, audio | Sorgelig / MiSTer-devel | [MiSTer-devel/Main_MiSTer](https://github.com/MiSTer-devel/Main_MiSTer) | GPL-3 |
 
 ## Reference
 
-- **Seibu Cup Soccer arcade hardware** — Seibu Kaihatsu, 1992, running on
-  the Seibu legionna.cpp hardware family (Seibu CRTC + SEI252 / RISE
-  sprite chip + SEI300 / COP3 coprocessor, COPX-D1 LUT ROM). This FPGA
-  core is a reimplementation from hardware documentation, MAME source
-  code (`legionna.cpp`, `legionna_v.cpp`, `seibu_crtc.cpp`,
-  `seibucop.cpp`), the game's own 68000 program ROM, and observation of
-  real hardware behaviour. ROMs are **not** included and must be
-  provided by the user.
-- **MAME project** — invaluable reference for memory maps, timing and
-  driver behaviour. [mamedev/mame](https://github.com/mamedev/mame)
+- **Godzilla arcade hardware** — Tad Corporation, 1992, running on
+  Seibu legionna.cpp hardware (CRTC Seibu + SEI252/RISE sprite chip +
+  SEI300 / COP3 coprocessor, COPX-D1 LUT ROM). This FPGA core is a
+  reimplementation from hardware documentation, MAME source code
+  (`seibu/legionna.cpp`, `seibu/legionna_v.cpp`, `seibu/seibu_crtc.cpp`,
+  `seibu/seibucop.cpp`), and observation of real hardware behavior.
+  ROMs are **not** included and must be provided by the user.
+- **MAME project** — invaluable reference for memory maps, timing,
+  and driver behavior. [mamedev/mame](https://github.com/mamedev/mame)
+- **Reverse engineering** — see `reference/mame_seibu/` for the MAME
+  driver sources used during development.
 
 ## Status
 
-**0.8 beta — preview.**
-
-The core runs the game on real MiSTer hardware: it boots, plays matches,
-keeps score and handles continues. The Seibu SEI300 / COP3 coprocessor is
-implemented, including the movement and collision macros, the DMA copy
-modes and the depth sorting of the players. Verification is still ongoing.
+**Work in progress** (bring-up phase, May 2026):
+- Core architecture forked from SkySmasher (Seibu D-Con family).
+- 4 tilemap layers (BG/MG/FG/Text) integrated.
+- Sprite renderer ported from GundamSD (SEI0211 / SEI252 family).
+- Memory map adapted to legionna_map (0x100xxx addresses).
+- **COP3 (SEI300) implemented as bring-up stub** — register file
+  accepts writes and returns plausible defaults on reads. Sprite DMA,
+  collision detection, and math macros are **NOT** yet implemented.
+- Without full COP3, the game will likely boot (POST + title screen)
+  but **gameplay will not function** (no sprite DMA, no collisions,
+  no movement logic).

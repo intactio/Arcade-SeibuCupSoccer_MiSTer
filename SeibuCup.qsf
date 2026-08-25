@@ -39,7 +39,9 @@ set_global_assignment -name OPTIMIZATION_TECHNIQUE SPEED
 set_global_assignment -name MUX_RESTRUCTURE ON
 set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON
 set_global_assignment -name AUTO_DELAY_CHAINS_FOR_HIGH_FANOUT_INPUT_PINS ON
-set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC_FOR_AREA ON
+# Spenta 2026-08-22: ottimizza la logica combinatoria per AREA, e con il 70%
+# di ALM occupati stavamo pagando timing per spazio che non serve.
+#set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC_FOR_AREA ON
 set_global_assignment -name ADV_NETLIST_OPT_SYNTH_WYSIWYG_REMAP ON
 set_global_assignment -name SYNTH_GATED_CLOCK_CONVERSION ON
 set_global_assignment -name PRE_MAPPING_RESYNTHESIS ON
@@ -85,6 +87,9 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/SeibuCup_audio_z80.s
 set_global_assignment -name QIP_FILE rtl/sound/t80/t80.qip
 set_global_assignment -name QIP_FILE rtl/sound/jtopl/jtopl.qip
 set_global_assignment -name QIP_FILE rtl/sound/jt6295/jt6295.qip
+# Richiesti da jt6295 con INTERPOL=1 (upsampler FIR 4x, coeff. jt6295_up4.hex)
+set_global_assignment -name VERILOG_FILE rtl/sound/jtframe_audio/jtframe_fir_mono.v
+set_global_assignment -name VERILOG_FILE rtl/sound/jtframe_audio/jtframe_dual_ram.v
 set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:sys/build_id.tcl"
 set_location_assignment PIN_U9 -to ADC_CONVST
 set_location_assignment PIN_V10 -to ADC_SCK
@@ -272,6 +277,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/SeibuCup_sprite_rend
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/spram_dp.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/pause_overlay.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/crt_adjust.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/crt_vsize.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/pause_text.sv
 set_global_assignment -name VERILOG_FILE rtl/jtframe/jtframe_68kdtack_cen.v
 set_global_assignment -name VERILOG_FILE rtl/jtframe/jtframe_freqinfo.v
