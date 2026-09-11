@@ -276,9 +276,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/SeibuCup_tile_layer.
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/SeibuCup_sprite_renderer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/spram_dp.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/pause_overlay.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/crt_adjust.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/crt_vsize.sv
-set_global_assignment -name SYSTEMVERILOG_FILE rtl/SeibuCup/pause_text.sv
 set_global_assignment -name VERILOG_FILE rtl/jtframe/jtframe_68kdtack_cen.v
 set_global_assignment -name VERILOG_FILE rtl/jtframe/jtframe_freqinfo.v
 set_global_assignment -name VERILOG_FILE rtl/jtframe/jtframe_bcd_cnt.v

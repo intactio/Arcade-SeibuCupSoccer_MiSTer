@@ -12,6 +12,8 @@ incremental_db/
 *.sld
 *.done
 *.rbf
+# ECCEZIONE: il core della release va nel repo, e' quello che scaricano gli utenti.
+!releases/*.rbf
 c5_pin_model_dump.txt
 jtag.cdf
 report_worst.tcl

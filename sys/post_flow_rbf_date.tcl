@@ -1,11 +1,11 @@
 # Post-flow: copia il RBF generato da Quartus in una copia datata.
-#   output_files/SeibuCup.rbf -> output_files/SeibuCup_yyyymmdd.rbf
+#   output_files/SeibuCupSoccer.rbf -> output_files/SeibuCupSoccer_yyyymmdd.rbf
 # Se il nome esiste gia' (piu' build nello stesso giorno): _yyyymmdd_1, _2, ...
 # Gira dentro `quartus_sh --flow compile` (POST_FLOW_SCRIPT_FILE). Non tocca
-# il SeibuCup.rbf base (quello resta per l'upload MiSTer).
+# il SeibuCupSoccer.rbf base (quello resta per l'upload MiSTer).
 
 set out_dir "output_files"
-set base    "SeibuCup"
+set base    "SeibuCupSoccer"
 set src     "$out_dir/$base.rbf"
 
 if {![file exists $src]} {

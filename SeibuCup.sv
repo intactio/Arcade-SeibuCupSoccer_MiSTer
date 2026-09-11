@@ -27,7 +27,7 @@ module emu
 (
 	input         CLK_50M,
 	input         RESET,
-	inout  [48:0] HPS_BUS,
+	inout  [45:0] HPS_BUS,
 	output        CLK_VIDEO,
 	output        CE_PIXEL,
 	output [12:0] VIDEO_ARX,
@@ -255,10 +255,6 @@ wire signed [9:0] osd_txt_yoff = TRIM0;
 //  [91:89]    OKI ADPCM volume         P3   0=Default(0.63x),1=Mute,2..7=%      osd_oki_vol
 //  [36:34]..[60:58]  FM Ch1..Ch9 vol   P3   0=Default,1=Mute,2..7=% (3 bit/ch)  osd_fm_ch[0..8]
 //  [63:61]..[72:70]  OKI Ch1..Ch4 vol  P3   idem; Ch4 = batteria                osd_oki_ch[0..3]
-//  [101]      CRT Adjust On/Off        P1   Off/On                              crt_on
-//  [100:96]   CRT H-Size               P1   0/+1..+15/-16..-1 (signed)          hsize_s
-//  [85:79]    CRT H-Position           P1   0/+1..+48/-48..-1                    hpos_off
-//  [78:74]    CRT V-Shift              P1   0/+1..+15/-16..-1 (signed)           vshift_off
 //  [127:126]  Aspect ratio             P1   Original/Full/[ARC1]/[ARC2]         ar
 //  NB: la pagina P5 "Layer Position" e' stata RIMOSSA. Gli offset sono ora
 //      costanti (TRIM0=0 + basi -1/-8/-1), identici ai valori con cui il core
@@ -266,29 +262,28 @@ wire signed [9:0] osd_txt_yoff = TRIM0;
 //  NB: status[17] = PAUSE (riga ~162). NON usarlo per opzioni salvabili: un cfg
 //      con bit17=1 mette il 68k in halt al boot -> il gioco non parte.
 //  [22:20]    Start Stage (diag)       P4   0=Normal,1..5=Stage N                osd_start_stage
-//  [74:78] [79:85] [96:100] [101] = CRT Adjust.
-//  LIBERI: [4:1] [8:16] [23:28] [73] [92:95] [102:125].
+//  [97:92]    Analog VGA H-Shift       P1   -32..+31 pixel (solo pin VGA_HS)
+//  [100:98]   Analog VGA V-Shift       P1   0..+7 righe  (solo pin VGA_VS)
+//  LIBERI: [4:1] [8:16] [23:28] [73:85] [101:125].  (CRT Adjust e V-Size
+//  non ci sono in questa versione: stanno solo nel core rm.)
 localparam CONF_STR = {
-	"SeibuCup;;",
+	"SeibuCupSoccer;;",
+	"-;",
+	"O[18],Clean Pause,Off,On;",
 	"-;",
 	"P1,Video;",
 	"P1O[127:126],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"P1O[7:5],Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer,HV-Integer;",
 	"P1O[19],Refresh Rate,Original 61Hz,60Hz;",
-	"P1O[18],Clean Pause,Off,On;",
-	"P1O[101],CRT Adjust,Off,On;",
-	"H1P1O[100:96],CRT H-Size,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"H1P1O[85:79],CRT H-Position,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,+32,+33,+34,+35,+36,+37,+38,+39,+40,+41,+42,+43,+44,+45,+46,+47,+48,-48,-47,-46,-45,-44,-43,-42,-41,-40,-39,-38,-37,-36,-35,-34,-33,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"H1P1O[78:74],CRT V-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
-	"H1P1O[107:104],CRT V-Size,0,+1,+2,+3,+4,+5,+6,+7,-7,-6,-5,-4,-3,-2,-1;",
-	"H1P1O[108],CRT V-Size Mode,PVM,Cabinet;",
+	"P1O[97:92],Analog VGA H-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"P1O[100:98],Analog VGA V-Shift,0,+1,+2,+3,+4,+5,+6,+7;",
 	"-;",
 	"DIP;",
 	"-;",
 	"P3,Audio;",
 	"P3O[88:86],FM (YM3812) volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[91:89],OKI ADPCM volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
-	"-;",
+	"P3-;",
 	"P3O[36:34],FM Ch1 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[39:37],FM Ch2 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[42:40],FM Ch3 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
@@ -298,12 +293,11 @@ localparam CONF_STR = {
 	"P3O[54:52],FM Ch7 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[57:55],FM Ch8 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[60:58],FM Ch9 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
-	"-;",
+	"P3-;",
 	"P3O[63:61],OKI Ch1 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[66:64],OKI Ch2 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[69:67],OKI Ch3 Volume,Default,Mute,25%,50%,75%,100%,150%,200%;",
 	"P3O[72:70],OKI Ch4 Volume (batteria),Default,Mute,25%,50%,75%,100%,150%,200%;",
-	"-;",
 	"-;",
 	"P4,Debug;",
 	"P4O[30],BG layer,On,Off;",
@@ -312,11 +306,9 @@ localparam CONF_STR = {
 	"P4O[33],Sprite layer,On,Off;",
 	"P4O[29],Text layer,On,Off;",
 	"P4O[22:20],Start Stage,Normal,Phase 1,Phase 2,Stage 4,Stage 5,Stage 6,Ending;",
-	"P4-;",
 	"-;",
 	"T[0],Reset;",
 	"R[0],Reset and close OSD;",
-	"-;",
 	// J1: bit 4=Fire(A), 5=Roll(B), 6=Dynamite(X/C), 7,8,9=unused, 10=Start1, 11=Coin1, 12=Pause
 	// 13=Start2, 14=Coin2 (MiSTer arcade convention fissa)
 	"J1,Attack,Jump,Debug,-,-,-,Start,Coin,Pause,Start 2P,Coin 2P;",
@@ -345,7 +337,7 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1)) hps_io
 	.forced_scandoubler(forced_scandoubler),
 	.buttons(buttons),
 	.status(status),
-	.status_menumask({14'd0, ~status[101], 1'b0}),  // H1 group (CRT Adjust) shown only when On
+	.status_menumask(16'd0),
 	.ps2_key(ps2_key),
 	.joystick_0(joy0),
 	.joystick_1(joy1),
@@ -420,6 +412,26 @@ always @(posedge clk_sys)
 		if (ioctl_addr[26:1] == 26'd0) dip_sw  <= ioctl_dout;
 		if (ioctl_addr[26:1] == 26'd1) dip_sw2 <= ioctl_dout;
 	end
+
+// ── Variante del set — byte MRA <rom index="1"> ─────────────────────────────
+// L'HPS scarica index=1 PRIMA dei ROM (index=0), quindi il byte e' gia'
+// latchato quando arriva il primo dato: si puo' usare per modificare il flusso
+// mentre passa. I DIP (index=254) arrivano DOPO e non servirebbero.
+// Non azzerato dal reset di gioco: solo ioctl_wr lo scrive.
+//   00 = cupsoc / cupsoca      nessuna modifica
+//   01 = olysoc92 / a / b      [$0FFFFE] = $3032  -> titolo Olympic Soccer '92
+//   02 = cupsocb               [$0FFFFA] = $00FF  -> spegne il testo di debug
+// Sono le stesse due scritture che MAME fa in init_olysoc92 / init_cupsocs.
+reg [7:0] set_variant = 8'd0;
+always @(posedge clk_sys)
+	if (ioctl_wr && (ioctl_index == 16'd1)) set_variant <= ioctl_dout[7:0];
+
+wire is_main_dl = ioctl_download && (ioctl_index == 16'd0);
+wire hit_oly    = (set_variant == 8'd1) && is_main_dl && (ioctl_addr[26:1] == 27'h0FFFFE >> 1);
+wire hit_dbg    = (set_variant == 8'd2) && is_main_dl && (ioctl_addr[26:1] == 27'h0FFFFA >> 1);
+wire [15:0] ioctl_dout_set = hit_oly ? 16'h3032
+                           : hit_dbg ? 16'h00FF
+                                     : ioctl_dout;
 
 ///////////////////////   CLOCKS   ///////////////////////////////
 
@@ -567,7 +579,7 @@ sdram_bridge bridge
 	.ioctl_download(ioctl_download),
 	.ioctl_wr(ioctl_wr),
 	.ioctl_addr(ioctl_addr),
-	.ioctl_dout(ioctl_dout),
+	.ioctl_dout(ioctl_dout_set),   // flusso con la modifica di variante applicata
 	.ioctl_index(ioctl_index),
 	.ioctl_wait(ioctl_wait),
 
@@ -1163,178 +1175,50 @@ pause_overlay u_pause_ovl (
 	.rgb_b_out (av_b)
 );
 
-// ── CRT Adjust (Analog H-Size + H-Position + V-Shift) — modulo unico ─────────
-// Portato 1:1 da GundamSD. SeibuCup e' largo 320px MA la geometria e' ANCORATA
-// come Legionnaire (margini 88 sx / 28 dx, NON centrata come Gundam 48/16):
-// in CONTENTSHIFT l'H-Position spinta a destra sbatte nel nero. Quindi
-// HPOS_SYNCSHIFT (sposta l'HSync, come Legionnaire/HeatedBarrel) -> niente
-// blocco nero ai bordi.
-localparam int H_TOTAL_BB = 436;   // SeibuCup H_TOTAL (96/14 pixel clock)
-localparam int V_TOTAL_BB = 262;   // = V_TOTAL del video_timing (cupsoc 60 Hz)
+assign VGA_R  = av_r;
+assign VGA_G  = av_g;
+assign VGA_B  = av_b;
 
-// ON/OFF (status[101]): OFF = bypass nativo, ON = modulo attivo.
-reg crt_on;
-always @(posedge clk_sys) if (ce_pix) crt_on <= status[101];
+// ── Centratura dell'uscita VGA analogica ────────────────────────────────────
+// Sull'uscita analogica il timing del core va diritto al DAC, senza scaler, e
+// la posizione dell'immagine sul tubo dipende dal ritardo fra il fronte di sync
+// e l'inizio dell'area attiva. Qui si ritardano SOLO i pin VGA_HS/VGA_VS:
+// HSync e VSync interni restano intatti, quindi il gioco e l'HDMI (che passa
+// dallo scaler e rigenera il proprio timing) non cambiano di un pixel.
+// Default 0 su entrambi = comportamento identico a prima.
+//
+// H-Shift in PIXEL (clockato su ce_pix), V-Shift in RIGHE (clockato a fine
+// riga): ritardare il VSync di N pixel spostherebbe di frazioni di riga e non
+// si vedrebbe. Bit OSD isolati, non condivisi con nessun'altra voce.
 
-// H-Size bidirezionale (status[100:96], two's complement 5-bit).
-reg signed [4:0] hsize_s;
-always @(posedge clk_sys) if (ce_pix) hsize_s <= $signed(status[100:96]);
+// H-Shift BIDIREZIONALE: status[97:92] in complemento a due, -32..+31 pixel.
+// Lo shift register puo' solo RITARDARE, quindi il verso opposto si ottiene
+// girando sulla riga: -N = ritardo di (H_TOTAL - N), che a regime equivale ad
+// anticipare di N. Serve percio' uno shreg lungo quanto la riga intera.
+localparam int H_TOTAL_LINE = 436;
+wire signed [6:0] hsh = {status[97], status[97:92]};   // -32..+31
+wire [8:0] hshift_tap = hsh[6] ? (9'(H_TOTAL_LINE) + {{2{hsh[6]}}, hsh})
+                               : {2'd0, hsh};
+reg  [8:0] hshift_d;
+always @(posedge clk_sys) if (ce_pix) hshift_d <= hshift_tap;
+reg  [H_TOTAL_LINE-1:0] hsync_shreg;
+always @(posedge clk_sys) if (ce_pix) hsync_shreg <= {hsync_shreg[H_TOTAL_LINE-2:0], HSync};
+reg  vga_hs_r;
+always @(posedge clk_sys) if (ce_pix)
+	vga_hs_r <= (hshift_d == 9'd0) ? HSync : hsync_shreg[hshift_d - 9'd1];
 
-// H-Position (status[85:79], 7 bit): 0..48 = +0..+48 (destra), 79..127 = -48..-1.
-reg [6:0] hpos_d;
-always @(posedge clk_sys) if (ce_pix) hpos_d <= status[85:79];
-wire signed [8:0] hpos_off = (hpos_d <= 7'd48)
-	? $signed({2'b0, hpos_d})
-	: $signed({2'b0, hpos_d}) - 9'sd128;
+// V-Shift: status[100:98], 0..7 righe. line_tick = fine riga.
+wire line_tick = ce_pix && (timing_hpos == 10'd0) && (hpos_prev != 10'd0);
+reg  [2:0] vshift_d;
+always @(posedge clk_sys) if (line_tick) vshift_d <= status[100:98];
+reg  [6:0] vsync_line_shreg;
+always @(posedge clk_sys) if (line_tick) vsync_line_shreg <= {vsync_line_shreg[5:0], VSync};
+reg  vga_vs_r;
+always @(posedge clk_sys) if (line_tick)
+	vga_vs_r <= (vshift_d == 3'd0) ? VSync : vsync_line_shreg[vshift_d - 3'd1];
 
-// V-Shift (status[78:74], signed 5-bit -16..+15 righe).
-reg signed [5:0] vshift_off;
-always @(posedge clk_sys) if (ce_pix) vshift_off <= $signed(status[78:74]);
-
-// ── CRT V-Size: stadio a monte di crt_adjust ────────────────────────────────
-// Ritempora il numero di righe per frame (il frame rate NON cambia): meno
-// righe = riga piu' lunga = immagine PIU' ALTA. Nessuna riga duplicata o
-// scartata. Il costo e' che l'HSync si sposta: un PVM segue, un chassis da
-// cabinato con AFC stretta regge uno o due passi.
-// Convenzione del modulo: vsize +N = immagine piu' BASSA. La negazione qui
-// sotto fa si' che "+" nell'OSD significhi piu' ALTA, come per l'H-Size.
-reg signed [5:0] crt_vsz;
-reg              crt_vsmode;
-wire signed [5:0] crt_vsz_step = $signed(status[107:104]);
-wire signed [7:0] vsz_raw = -($signed({{2{crt_vsz_step[5]}}, crt_vsz_step})
-                            + ($signed({{2{crt_vsz_step[5]}}, crt_vsz_step}) <<< 1));
-
-// ⛔ TETTO DELL'ENLARGE = front porch verticale di QUESTO gioco (V_FP = 9).
-// Allargando, il modulo emette meno righe e il contenuto scende: oltre le
-// righe di front porch le ultime dell'immagine non vengono piu' emesse.
-// SeibuCup ha 240 righe attive dentro 262 totali, cioe' 22 di blanking:
-// molto meno di quanto l'OSD offra (passi da 3 fino a 21).
-localparam signed [7:0] ENL_MAX = 8'sd9;   // = V_FP del video_timing
-
-// Tetti dello SHRINK: li impone la profondita' del ring, e sono diversi nei due
-// modi (docs: PVM |vsize| <= RING/2 - 2, Cabinet <= RING - 4). Con RING_LINES 32
-// valgono 14 e 28. Non e' una perdita: l'enlarge e' gia' fermo a 9 per il front
-// porch, e oltre quei valori il ring non avrebbe le righe per lavorare.
-wire signed [7:0] vsz_cab = (vsz_raw >  8'sd28)  ?  8'sd28
-                          : (vsz_raw < -ENL_MAX) ? -ENL_MAX : vsz_raw;
-wire signed [7:0] vsz_pvm = (vsz_raw >  8'sd14)  ?  8'sd14
-                          : (vsz_raw < -ENL_MAX) ? -ENL_MAX : vsz_raw;
-always @(posedge clk_sys) if (ce_pix) begin
-	crt_vsz    <= status[108] ? vsz_cab[5:0] : vsz_pvm[5:0];
-	crt_vsmode <= status[108];
-end
-
-// Read rate a QUARTI di ciclo. SeibuCup pixel = 96/14 = 14 clk = 56 quarti
-// (NON 64 come Legionnaire/Gundam a 96/16): base = clk_video/pixel * 4 = 56.
-// Periodo = (56 + hsize) quarti; l'accumulatore fa +4 per clk.
-wire hs_ref;                      // dal modulo (registrato) -> no loop combinatorio
-reg  hs_ref_d;
-always @(posedge clk_sys) hs_ref_d <= hs_ref;
-wire hs_ref_rise = hs_ref & ~hs_ref_d;
-wire [7:0] rd_period = 8'd56 + {{3{hsize_s[4]}}, hsize_s};  // hsize -16..+15 -> 40..71 quarti
-reg  [7:0] rd_acc;
-wire rd_tick = (rd_acc + 8'd4) >= {1'b0, rd_period};
-always @(posedge clk_sys) begin
-	if      (hs_ref_rise) rd_acc <= 8'd0;
-	else if (rd_tick)     rd_acc <= rd_acc + 8'd4 - {1'b0, rd_period};
-	else                  rd_acc <= rd_acc + 8'd4;
-end
-wire rd_ce = crt_on ? rd_tick : ce_pix;
-
-// ── Stadio di riallineamento, copiato da sys/scanlines.v ────────────────────
-// Sys-side il flusso passa da `scanlines`, che ritarda di TRE clock dato,
-// sync, DE e ANCHE il clock-enable, tutti insieme: quando pxl_cen pulsa, il
-// dato che il modulo campiona e' esattamente il pixel di quel CE.
-// Core-side quella garanzia non c'e': ce_pix esce dai contatori del timing
-// mentre l'RGB arriva dalla palette in BRAM. Qui si replica lo stesso stadio,
-// stessa profondita' e stessi segnali, cosi' il ring campiona l'istante giusto.
-reg [7:0] sl_r, sl_g, sl_b;
-reg       sl_hs, sl_vs, sl_de, sl_vb, sl_ce;
-always @(posedge clk_sys) begin
-	reg [7:0] r1, r2, g1, g2, b1, b2;
-	reg       hs1, hs2, vs1, vs2, de1, de2, vb1, vb2, ce1, ce2;
-	sl_r  <= r2;  r2  <= r1;  r1  <= av_r;
-	sl_g  <= g2;  g2  <= g1;  g1  <= av_g;
-	sl_b  <= b2;  b2  <= b1;  b1  <= av_b;
-	sl_hs <= hs2; hs2 <= hs1; hs1 <= HSync;
-	sl_vs <= vs2; vs2 <= vs1; vs1 <= VSync;
-	sl_de <= de2; de2 <= de1; de1 <= video_de_r;
-	sl_vb <= vb2; vb2 <= vb1; vb1 <= VBlank;
-	sl_ce <= ce2; ce2 <= ce1; ce1 <= ce_pix;
-end
-
-wire [7:0] vz_r, vz_g, vz_b;
-wire       vz_hs, vz_vs, vz_de, vz_vb, vz_ce;
-crt_vsize #(
-	// Vincoli del ring (docs): PVM |vsize| <= RING/2 - 2, Cabinet <= RING - 4.
-	// LINE_PX 320 = larghezza attiva VERA di questo gioco (Rainbow usa 384 che
-	// e' il valore ereditato dal riferimento NeoGeo): ogni pixel in piu' per
-	// riga costa blocchi M10K, e qui il budget e' stretto.
-	// RING_LINES 32 invece di 46: 46 servono per +/-21 righe, ma qui l'enlarge
-	// e' gia' limitato a 9 dal front porch verticale. Le 14 righe di ring in
-	// meno valgono ~14 blocchi M10K, che a 553/553 sono tutto lo spazio che c'e'.
-	.RING_LINES(32),
-	.LINE_PX   (320)
-) u_crt_vsize (
-	.clk       (clk_sys),
-	.pxl_cen   (sl_ce),
-	.active    (crt_on),
-	.tube_mode (crt_vsmode),
-	.vsize     (crt_vsz),
-	.r_in      (sl_r), .g_in (sl_g), .b_in (sl_b),
-	.hs_in     (sl_hs),
-	.vs_in     (sl_vs),
-	.de_in     (sl_de),            // DE del DATO (video_de_r), non dei contatori
-	.vb_in     (sl_vb),            // vblank VERO, non il blank combinato
-	.r_out     (vz_r), .g_out (vz_g), .b_out (vz_b),
-	.hs_out    (vz_hs),
-	.vs_out    (vz_vs),
-	.de_out    (vz_de),
-	.vb_out    (vz_vb),
-	.ce_out    (vz_ce)
-);
-
-wire [7:0] str_r, str_g, str_b;
-wire       str_hs, str_vs, str_hb, str_vb;
-crt_adjust #(
-	.VTOTAL   (V_TOTAL_BB),
-	.HTOTAL   (H_TOTAL_BB),
-	.HPOS_MODE(0)          // 0 = HPOS_SYNCSHIFT (geometria ancorata come Legionnaire)
-) u_crt_adjust (
-	.clk      (clk_sys),
-	.pxl_cen  (vz_ce),            // CE ritemporizzato da crt_vsize, non ce_pix
-	.pxl2_cen (rd_ce),
-	.active   (crt_on),
-	.hsize    (hsize_s),
-	.hoffset  (hpos_off),
-	.voffset  (vshift_off),
-	.r_in     (vz_r), .g_in (vz_g), .b_in (vz_b),
-	.hs_in    (vz_hs),
-	.vs_in    (vz_vs),
-	.hb_in    (~vz_de),
-	.vb_in    (vz_vb),            // vblank RIGENERATO: col nativo le righe
-	                              // aggiunte verrebbero annerite qui
-	.r_out    (str_r), .g_out (str_g), .b_out (str_b),
-	.hs_out   (str_hs), .vs_out (str_vs),
-	.hb_out   (str_hb), .vb_out (str_vb),
-	.hs_ref_out (hs_ref)
-);
-
-// Finestra DE a valle: interamente dalle uscite di crt_adjust, come da
-// docs/vsize-integration.md ("feed everything downstream from the _vz
-// signals") e come fa il NeoGeo Streamer con
-//     assign vga_de_hs = ~vga_hb_hs & ~vga_vb_hs;
-// La vecchia finestra si apriva sul VBlank NATIVO (pattern Blood Bros): con il
-// V-Size attivo le righe aggiunte cadrebbero fuori da quella finestra e
-// resterebbero nere.
-wire de_osd = ~str_hb & ~str_vb;
-
-// Output: ON -> dal modulo; OFF -> nativo.
-assign VGA_R  = crt_on ? str_r  : av_r;
-assign VGA_G  = crt_on ? str_g  : av_g;
-assign VGA_B  = crt_on ? str_b  : av_b;
-assign VGA_HS = crt_on ? str_hs : HSync;
-assign VGA_VS = crt_on ? str_vs : VSync;
+assign VGA_HS = vga_hs_r;
+assign VGA_VS = vga_vs_r;
 
 // Aspect ratio: Original = 4:3 arcade display, Full Screen = 0:0
 wire [11:0] arx = (!ar) ? 12'd4 : (ar - 1'd1);
@@ -1345,14 +1229,14 @@ wire [11:0] ary = (!ar) ? 12'd3 : 12'd0;
 video_freak video_freak
 (
 	.CLK_VIDEO(clk_sys),
-	.CE_PIXEL(crt_on ? rd_ce : ce_pix),
+	.CE_PIXEL(ce_pix),
 	.VGA_VS(VSync),
 	.HDMI_WIDTH(HDMI_WIDTH),
 	.HDMI_HEIGHT(HDMI_HEIGHT),
 	.VGA_DE(VGA_DE),
 	.VIDEO_ARX(VIDEO_ARX),
 	.VIDEO_ARY(VIDEO_ARY),
-	.VGA_DE_IN(crt_on ? de_osd : ~(HBlank | VBlank)),
+	.VGA_DE_IN(~(HBlank | VBlank)),
 	.ARX(arx),
 	.ARY(ary),
 	.CROP_SIZE(12'd0),
