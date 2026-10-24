@@ -63,6 +63,7 @@ module SeibuCup_maincpu_map (
 	input  wire [15:0] dsw_input,
 	input  wire [15:0] dsw2_input,
 	input  wire  [2:0] osd_start_phase,   // OSD: 0=Normal, 1..3 = parti da fase N (3=stage 4 finale)
+	input  wire        selection_mode,    // Selection sets: CRTC/I/O map of MAME cupsocs_map
 	// Main ROM (SDRAM bridge)
 	input  wire [15:0] main_rom_rdata,
 	input  wire        main_rom_ready,
@@ -121,16 +122,20 @@ module SeibuCup_maincpu_map (
 	wire bus_active = ~bus_asn;
 	wire is_rom     = bus_active && (bus_addr <  24'h100000);   // cupsoc: 1MB program
 	wire is_ram_lo  = bus_active && (bus_addr >= 24'h100000) && (bus_addr < 24'h100400);
-	wire is_crtc    = bus_active && (bus_addr >= 24'h100600) && (bus_addr < 24'h100650);
+	// Selection (MAME cupsocs_map): CRTC at $100600-$10067F with the word index XOR 0x20
+	wire is_crtc    = bus_active && (bus_addr >= 24'h100600)
+	                  && (bus_addr < (selection_mode ? 24'h100680 : 24'h100650));
 	wire is_irqack  = bus_active && (bus_addr >= 24'h100680) && (bus_addr < 24'h100682);
 	wire is_cop     = bus_active && (bus_addr >= 24'h100400) && (bus_addr < 24'h100700)
 	                  && !is_crtc && !is_irqack;
-	wire is_snd     = bus_active && (bus_addr >= 24'h100700) && (bus_addr < 24'h100720);
-	wire is_dip     = bus_active && (bus_addr >= 24'h100740) && (bus_addr < 24'h100744);
-	wire is_pin     = bus_active && (bus_addr >= 24'h100744) && (bus_addr < 24'h100748);
-	wire is_pin34   = bus_active && (bus_addr >= 24'h100748) && (bus_addr < 24'h10074C);
-	wire is_sin     = bus_active && (bus_addr >= 24'h10074C) && (bus_addr < 24'h100750);
-	wire is_dsw2    = bus_active && (bus_addr >= 24'h10075C) && (bus_addr < 24'h10075E);
+	// Selection swaps the sound window ($100740) and the input/DSW window ($100700)
+	wire [23:0] io_addr = bus_addr ^ (selection_mode ? 24'h000040 : 24'h000000);
+	wire is_snd     = bus_active && (io_addr >= 24'h100700) && (io_addr < 24'h100720);
+	wire is_dip     = bus_active && (io_addr >= 24'h100740) && (io_addr < 24'h100744);
+	wire is_pin     = bus_active && (io_addr >= 24'h100744) && (io_addr < 24'h100748);
+	wire is_pin34   = bus_active && (io_addr >= 24'h100748) && (io_addr < 24'h10074C);
+	wire is_sin     = bus_active && (io_addr >= 24'h10074C) && (io_addr < 24'h100750);
+	wire is_dsw2    = bus_active && (io_addr >= 24'h10075C) && (io_addr < 24'h10075E);
 	// VRAM cupsoc: layout shiftato -0x800 vs legionna (= layout heatbrl).
 	wire is_bg      = bus_active && (bus_addr >= 24'h100800) && (bus_addr < 24'h101000);
 	wire is_fg      = bus_active && (bus_addr >= 24'h101000) && (bus_addr < 24'h101800);
@@ -212,7 +217,7 @@ module SeibuCup_maincpu_map (
 	assign crtc_cs    = is_crtc;
 	assign crtc_wr    = is_crtc & write;
 	assign crtc_rd    = is_crtc & bus_rnw;
-	assign crtc_addr  = bus_addr[6:1];
+	assign crtc_addr  = bus_addr[6:1] ^ (selection_mode ? 6'h20 : 6'h00);
 
 	// ─── COP3 ────────────────────────────────────────────────────────────────
 	assign cop_cs    = is_cop;

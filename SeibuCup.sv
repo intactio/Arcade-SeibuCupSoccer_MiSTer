@@ -421,6 +421,7 @@ always @(posedge clk_sys)
 //   00 = cupsoc / cupsoca      nessuna modifica
 //   01 = olysoc92 / a / b      [$0FFFFE] = $3032  -> titolo Olympic Soccer '92
 //   02 = cupsocb               [$0FFFFA] = $00FF  -> spegne il testo di debug
+//   03 = cupsocs / cupsocs2    [$0FFFFA] = $00FF + Selection CRTC/I/O map (MAME cupsocs_map)
 // Sono le stesse due scritture che MAME fa in init_olysoc92 / init_cupsocs.
 reg [7:0] set_variant = 8'd0;
 always @(posedge clk_sys)
@@ -428,7 +429,8 @@ always @(posedge clk_sys)
 
 wire is_main_dl = ioctl_download && (ioctl_index == 16'd0);
 wire hit_oly    = (set_variant == 8'd1) && is_main_dl && (ioctl_addr[26:1] == 27'h0FFFFE >> 1);
-wire hit_dbg    = (set_variant == 8'd2) && is_main_dl && (ioctl_addr[26:1] == 27'h0FFFFA >> 1);
+wire selection_set = (set_variant == 8'd3);
+wire hit_dbg    = ((set_variant == 8'd2) || selection_set) && is_main_dl && (ioctl_addr[26:1] == 27'h0FFFFA >> 1);
 wire [15:0] ioctl_dout_set = hit_oly ? 16'h3032
                            : hit_dbg ? 16'h00FF
                                      : ioctl_dout;
@@ -654,7 +656,9 @@ darius_dual68k_top game
 	// Start Stage OSD: 0=Normal; 1-2 = giri missioni successivi (Phase 1/2,
 	// mission select con difficolta'/mappe del giro N); 3-6 = fasi fisse
 	// (Stage 4..7). Mapping diretto fase = valore.
-	.osd_start_phase(status[22:20]),
+	// Start Stage patches fixed set 1 program addresses: off for Selection
+	.osd_start_phase(selection_set ? 3'd0 : status[22:20]),
+	.selection_mode(selection_set),
 
 	// SDRAM ROM (via bridge)
 	.main_rom_rdata(game_main_data),

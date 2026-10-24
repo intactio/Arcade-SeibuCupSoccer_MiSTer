@@ -25,7 +25,7 @@ Soccer '92* and in a *Selection* revision.
 
 **Current version: 1.0.**
 
-The core boots, plays and has been checked against the original PCB. All six
+The core boots, plays and has been checked against the original PCB. All eight
 playable sets are provided as MRAs. Video, audio, four-player inputs, DIP
 switches and the coprocessor are implemented.
 
@@ -214,8 +214,8 @@ all.
 
 ## Sets provided
 
-Six MRAs, all from the same merged `cupsoc.zip`. The parent sits in
-[releases/](releases/); the other five are in
+Eight MRAs, all from the same merged `cupsoc.zip`. The parent sits in
+[releases/](releases/); the other seven are in
 `releases/_alternatives/_Seibu Cup Soccer/`, which is the layout the MiSTer
 arcade menu expects.
 
@@ -227,9 +227,16 @@ arcade menu expects.
 | `Olympic Soccer '92 (set 1).mra` | `olysoc92` | alternative |
 | `Olympic Soccer '92 (set 2).mra` | `olysoc92a` | alternative |
 | `Olympic Soccer '92 (set 3).mra` | `olysoc92b` | alternative |
+| `Seibu Cup Soccer Selection (set 1).mra` | `cupsocs` | alternative |
+| `Seibu Cup Soccer Selection (set 2).mra` | `cupsocs2` | alternative |
 
-The two *Selection* sets (`cupsocs`, `cupsocs2`) are not included: they use a
-different CRTC memory map and need RTL work, not just an MRA.
+The two *Selection* sets use a different memory map (MAME `cupsocs_map`): the
+CRTC registers sit at `$100600-$10067F` with the register index XORed with
+`0x20`, and the sound window and the input/DIP window swap places
+(`$100700` <-> `$100740`). Their MRAs send variant `03`, which turns that map
+on and applies the same `$0FFFFA` patch as `cupsocb` (MAME `init_cupsocs`).
+The *Start Stage* OSD option patches set 1 program addresses, so it is
+ignored on these two sets.
 
 ## Known issues
 

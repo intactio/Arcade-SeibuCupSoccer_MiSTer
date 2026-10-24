@@ -76,6 +76,7 @@ module darius_dual68k_top
 	input  wire [15:0] dsw_input,
 	input  wire [15:0] dsw2_input,
 	input  wire  [2:0] osd_start_phase,
+	input  wire        selection_mode,   // Selection sets: CRTC/I/O map of MAME cupsocs_map
 	input  wire [15:0] main_rom_rdata,
 	input  wire        main_rom_ready,
 	input  wire [15:0] sub_rom_rdata,
@@ -357,6 +358,7 @@ SeibuCup_maincpu_map u_map (
 	.dsw_input      (dsw_input),
 	.dsw2_input     (dsw2_input),
 	.osd_start_phase(osd_start_phase),
+	.selection_mode (selection_mode),
 	.main_rom_rdata (main_rom_rdata),
 	.main_rom_ready (main_rom_ready),
 	.main_rom_addr  (main_rom_addr),
