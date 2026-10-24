@@ -135,6 +135,7 @@ module SeibuCup_sprite_renderer (
 	localparam SC_NEXT_E    = 4'd12;
 	localparam SC_DONE      = 4'd13;
 	localparam SC_CHECK2_W2 = 4'd14;
+	localparam SC_OCC       = 4'd15;   // Occupancy lookup before DECODE
 
 	reg [3:0] sc_state;
 	// CUPSOC: spriteram 2KB → 256 entry (MAME size/2/4 = 2048/2/4 = 256).
@@ -337,7 +338,7 @@ module SeibuCup_sprite_renderer (
 	always @(posedge clk) begin
 		if (reset) begin
 			sc_state    <= SC_IDLE;
-			entry_idx   <= 9'd255;
+			entry_idx   <= 9'd0;
 			tile_x_pf   <= 4'd0;
 			rom_req     <= 1'b0;
 			spr_addr    <= 11'd0;
@@ -355,8 +356,10 @@ module SeibuCup_sprite_renderer (
 			// abortisce e si riparte pulti sulla linea nuova. Si perdono gli
 			// sprite di coda (indici bassi = quelli davanti, come sul chip),
 			// ma il buffer resta in fase.
+			// With the ascending scan the entries not reached are the high
+			// ones (at the back), so the players in front are kept.
 			active_buf <= ~active_buf;
-			entry_idx  <= 9'd255;
+			entry_idx  <= 9'd0;
 			tile_x_pf  <= 4'd0;
 			clear_idx  <= 6'd0;
 			sc_state   <= SC_CLEAR;
@@ -365,10 +368,10 @@ module SeibuCup_sprite_renderer (
 				SC_IDLE: begin
 					if (gated_new_line) begin
 						active_buf <= ~active_buf;
-						// Scan INVERSO 511→0 (verificato su HW: ordine sprite-su-sprite
-						// opposto al loop MAME 0→511). Con last-write-wins, scandendo
-						// 511→0 l'entry 0 scrive per ultima e vince → entry 0 sopra.
-						entry_idx  <= 9'd255;
+						// Scan 0→255 with first-write-wins (occupancy bits),
+						// so entry 0 is still on top, but a line overflow now drops the
+						// back sprites instead of the front ones (the players).
+						entry_idx  <= 9'd0;
 						tile_x_pf  <= 4'd0;
 						clear_idx  <= 6'd0;
 						sc_state   <= SC_CLEAR;
@@ -382,7 +385,7 @@ module SeibuCup_sprite_renderer (
 					// + istanze spram_dp). Qui solo l'avanzamento del counter.
 					if (clear_idx == 6'd39) begin
 						clear_idx <= 6'd0;
-						spr_addr  <= {entry_idx, 2'd0};   // primo scan = entry 511
+						spr_addr  <= {entry_idx, 2'd0};   // first scan = entry 0
 						sc_state  <= SC_RW0;
 					end else begin
 						clear_idx <= clear_idx + 6'd1;
@@ -445,8 +448,14 @@ module SeibuCup_sprite_renderer (
 					if (rom_valid) begin
 						pf_rom_data <= rom_data;
 						rom_req     <= 1'b0;
-						sc_state    <= SC_DECODE;
+						sc_state    <= SC_OCC;
 					end
+				end
+
+				// One cycle for occ_q to sample the occupancy of the
+				// lanes this half-row writes (bank_row is valid now).
+				SC_OCC: begin
+					sc_state <= SC_DECODE;
 				end
 
 				// DECODE 1-CICLO: 8 pixel scritti in parallelo sui 8 bank.
@@ -472,12 +481,12 @@ module SeibuCup_sprite_renderer (
 				end
 
 				SC_NEXT_E: begin
-					// Scan DECRESCENTE: 511 → 510 → ... → 0, poi DONE.
-					if (entry_idx == 9'd0) begin
+					// Ascending scan 0 → 255, then DONE.
+					if (entry_idx == 9'd255) begin
 						sc_state <= SC_DONE;
 					end else begin
-						entry_idx <= entry_idx - 9'd1;
-						spr_addr  <= {entry_idx - 9'd1, 2'd0};
+						entry_idx <= entry_idx + 9'd1;
+						spr_addr  <= {entry_idx + 9'd1, 2'd0};
 						sc_state  <= SC_RW0;
 					end
 				end
@@ -485,7 +494,7 @@ module SeibuCup_sprite_renderer (
 				SC_DONE: begin
 					if (gated_new_line) begin
 						active_buf <= ~active_buf;
-						entry_idx  <= 9'd255;
+						entry_idx  <= 9'd0;
 						tile_x_pf  <= 4'd0;
 						clear_idx  <= 6'd0;
 						sc_state   <= SC_CLEAR;
@@ -504,13 +513,29 @@ module SeibuCup_sprite_renderer (
 	wire        clearing = (sc_state == SC_CLEAR);
 	wire        decoding = (sc_state == SC_DECODE);
 
+	// Occupancy bits of the buffer being written, same 8-lane x
+	// 40-row layout as the line buffer. A pixel already written by a lower
+	// entry (in front) is not overwritten: first write wins.
+	reg [39:0] occ_lane [0:7];
+	reg        occ_q    [0:7];
+	integer    oi;
+	always @(posedge clk) begin
+		for (oi = 0; oi < 8; oi = oi + 1) begin
+			occ_q[oi] <= occ_lane[oi][bank_row[oi]];
+			if (clearing)
+				occ_lane[oi] <= 40'd0;
+			else if (decoding && bank_we[oi] && !occ_q[oi])
+				occ_lane[oi][bank_row[oi]] <= 1'b1;
+		end
+	end
+
 	wire        b_we   [0:7];
 	wire [5:0]  b_wadr [0:7];
 	wire [13:0] b_wdat [0:7];
 	genvar gi;
 	generate
 		for (gi = 0; gi < 8; gi = gi + 1) begin : gen_wmux
-			assign b_we[gi]   = clearing ? 1'b1 : (decoding & bank_we[gi]);
+			assign b_we[gi]   = clearing ? 1'b1 : (decoding & bank_we[gi] & ~occ_q[gi]);
 			assign b_wadr[gi] = clearing ? clear_idx : bank_row[gi];
 			assign b_wdat[gi] = clearing ? LB_EMPTY  : bank_wd[gi];
 		end
