@@ -222,11 +222,25 @@ module SeibuCup_cop3 (
 	// valore random specifico non arriva MAI (boss stage 4 cupsoc).
 	// MAME usa total_cycles%256 (surrogato dell'RNG hw ignoto): l'LFSR e'
 	// un surrogato equivalente ma robusto alle letture regolari.
+	// Avanza un passo ogni 4096 clk (~43 us a 96 MHz), non ogni clk: il
+	// demo sceglie le squadre con due letture a ~1.6 us ($ABD2/$ABD8,
+	// & $F su una riga di 8 squadre x2) e corregge solo indici uguali
+	// (+1). Con un passo per clk i due valori sono scorrelati e ~6% dei
+	// demo mette la stessa squadra contro se stessa; cosi' le due letture
+	// cadono quasi sempre nello stesso passo (~0.2%). Per frame l'LFSR
+	// avanza ~390 passi e percorre comunque tutto il periodo.
 	reg [15:0] prng_lfsr;
+	reg [11:0] prng_div;
 	always @(posedge clk) begin
-		if (reset) prng_lfsr <= 16'hACE1;
-		else       prng_lfsr <= {prng_lfsr[14:0],
-		                         prng_lfsr[15] ^ prng_lfsr[14] ^ prng_lfsr[12] ^ prng_lfsr[3]};
+		if (reset) begin
+			prng_lfsr <= 16'hACE1;
+			prng_div  <= 12'd0;
+		end else begin
+			prng_div <= prng_div + 12'd1;
+			if (&prng_div)
+				prng_lfsr <= {prng_lfsr[14:0],
+				              prng_lfsr[15] ^ prng_lfsr[14] ^ prng_lfsr[12] ^ prng_lfsr[3]};
+		end
 	end
 
 	// RIDUZIONE AL RANGE 0..maxvalue — NON una maschera.
